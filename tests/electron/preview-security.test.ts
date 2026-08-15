@@ -103,6 +103,82 @@ describe('real Electron preview isolation', () => {
       process: 'undefined',
     }));
 
+    await page.evaluate((previewUrl) => new Promise<void>((resolveRequests, reject) => {
+      const previews = [
+        {
+          id: 'electron-preview-a',
+          allowedOrigin: 'https://a.example.test',
+          ownUrl: 'https://a.example.test/a-own.png',
+          crossUrl: 'https://b.example.test/a-cross.png',
+        },
+        {
+          id: 'electron-preview-b',
+          allowedOrigin: 'https://b.example.test',
+          ownUrl: 'https://b.example.test/b-own.png',
+          crossUrl: 'https://a.example.test/b-cross.png',
+        },
+      ];
+      const frames = previews.map((preview) => {
+        const iframe = document.createElement('iframe');
+        iframe.setAttribute('sandbox', 'allow-scripts allow-forms allow-modals');
+        iframe.src = `${previewUrl}#${preview.id}`;
+        document.body.append(iframe);
+        return { iframe, preview };
+      });
+      let scheduled = 0;
+      const timeout = window.setTimeout(() => reject(new Error('Concurrent previews did not execute')), 10_000);
+      window.addEventListener('message', async (event) => {
+        const current = frames.find(({ iframe }) => event.source === iframe.contentWindow);
+        if (!current) return;
+        if (event.data?.channel === 'component-vault:preview:ready'
+          && event.data.previewId === current.preview.id) {
+          await window.componentVault.configurePreviewNetwork({
+            previewId: current.preview.id,
+            allowedOrigins: [current.preview.allowedOrigin],
+          });
+          current.iframe.contentWindow?.postMessage({
+            channel: 'component-vault:preview:init',
+            previewId: current.preview.id,
+            component: {
+              html: '', css: '', allowScripts: true,
+              javascript: `for (const url of ${JSON.stringify([current.preview.ownUrl, current.preview.crossUrl])}) {
+                const image = document.createElement('img'); image.src = url; document.body.append(image);
+              }
+              parent.postMessage({ channel: 'test:requests-scheduled', previewId: ${JSON.stringify(current.preview.id)} }, '*');`,
+            },
+          }, '*');
+        }
+        if (event.data?.channel === 'test:requests-scheduled') {
+          scheduled += 1;
+          if (scheduled === frames.length) {
+            window.clearTimeout(timeout);
+            resolveRequests();
+          }
+        }
+      });
+    }), previewUrl);
+
+    await vi.waitFor(async () => {
+      const evidence = await electronApplication!.evaluate(() => ({
+        blocked: (globalThis as typeof globalThis & { __componentVaultBlockedPreviewUrls?: string[] })
+          .__componentVaultBlockedPreviewUrls ?? [],
+        started: (globalThis as typeof globalThis & { __componentVaultStartedPreviewUrls?: string[] })
+          .__componentVaultStartedPreviewUrls ?? [],
+      }));
+      expect(evidence.blocked).toEqual(expect.arrayContaining([
+        'https://b.example.test/a-cross.png',
+        'https://a.example.test/b-cross.png',
+      ]));
+      expect(evidence.started).toEqual(expect.arrayContaining([
+        'https://a.example.test/a-own.png',
+        'https://b.example.test/b-own.png',
+      ]));
+      expect(evidence.started).not.toEqual(expect.arrayContaining([
+        'https://b.example.test/a-cross.png',
+        'https://a.example.test/b-cross.png',
+      ]));
+    }, { timeout: 10_000, interval: 50 });
+
     const navigationParent = resolve('tests/electron/fixtures/preview-parent-navigation.html');
     await electronApplication.evaluate(async ({ BrowserWindow }, filePath) => {
       await BrowserWindow.getAllWindows()[0]?.loadFile(filePath);

@@ -3,8 +3,13 @@ import {
   type PreviewNetworkPolicyRequest,
 } from '../../shared/contracts';
 
-interface PreviewFrame {
-  parent: unknown | null;
+export interface PreviewFrame {
+  frameTreeNodeId: number;
+  url: string;
+  parent: PreviewFrame | null;
+  framesInSubtree: PreviewFrame[];
+  detached?: boolean;
+  isDestroyed?: () => boolean;
 }
 
 interface PreviewRequestDetails {
@@ -35,11 +40,13 @@ interface PreviewSession {
 interface FrameNavigationDetails {
   url: string;
   isMainFrame: boolean;
+  frame?: PreviewFrame | null;
   preventDefault: () => void;
 }
 
 export interface PreviewWebContents {
   id: number;
+  mainFrame: PreviewFrame;
   session: PreviewSession;
   on: (
     event: 'will-frame-navigate' | 'destroyed',
@@ -50,14 +57,17 @@ export interface PreviewWebContents {
 
 interface WindowPreviewSecurity {
   documentUrl: URL;
-  allowedOrigins: Set<string>;
-  previewId: string | null;
+  policies: Map<number, {
+    allowedOrigins: Set<string>;
+    previewId: string;
+  }>;
   webContents: PreviewWebContents;
 }
 
 export interface PreviewSecurityController {
   attach: (webContents: PreviewWebContents, previewDocumentUrl: string) => void;
   configure: (webContentsId: number, request: PreviewNetworkPolicyRequest) => void;
+  release: (webContentsId: number, previewId: string) => void;
 }
 
 const isCanonicalHttpsOrigin = (value: string): boolean => {
@@ -82,16 +92,62 @@ const isLocalPreviewAsset = (requestUrl: URL, documentUrl: URL): boolean => {
     && requestUrl.pathname.startsWith(previewDirectory);
 };
 
+const previewIdFromUrl = (value: string, documentUrl: URL): string | null => {
+  try {
+    const url = new URL(value);
+    const previewId = url.hash.slice(1);
+    return isPreviewDocument(url, documentUrl) && /^[A-Za-z0-9_-]+$/.test(previewId)
+      ? previewId
+      : null;
+  } catch {
+    return null;
+  }
+};
+
+const isLiveFrame = (frame: PreviewFrame): boolean => (
+  !frame.detached && !frame.isDestroyed?.()
+);
+
+const previewIdentityForFrame = (
+  requestingFrame: PreviewFrame | null | undefined,
+  documentUrl: URL,
+): { frame: PreviewFrame; previewId: string } | null => {
+  let frame = requestingFrame;
+  const visited = new Set<number>();
+  while (frame && !visited.has(frame.frameTreeNodeId)) {
+    visited.add(frame.frameTreeNodeId);
+    const previewId = previewIdFromUrl(frame.url, documentUrl);
+    if (previewId && isLiveFrame(frame)) return { frame, previewId };
+    frame = frame.parent;
+  }
+  return null;
+};
+
 export const createPreviewSecurityController = (
   options: PreviewSecurityOptions = {},
 ): PreviewSecurityController => {
   const windows = new Map<number, WindowPreviewSecurity>();
   const installedSessions = new WeakSet<PreviewSession>();
 
+  const prunePolicies = (security: WindowPreviewSecurity): void => {
+    const liveFrames = new Map(
+      security.webContents.mainFrame.framesInSubtree
+        .filter(isLiveFrame)
+        .map((frame) => [frame.frameTreeNodeId, frame]),
+    );
+    for (const [frameTreeNodeId, policy] of security.policies) {
+      const frame = liveFrames.get(frameTreeNodeId);
+      if (!frame || previewIdFromUrl(frame.url, security.documentUrl) !== policy.previewId) {
+        security.policies.delete(frameTreeNodeId);
+      }
+    }
+  };
+
   const shouldCancel = (details: PreviewRequestDetails): boolean => {
     if (details.webContentsId === undefined) return false;
     const security = windows.get(details.webContentsId);
     if (!security) return false;
+    prunePolicies(security);
 
     const isSubframe = details.resourceType === 'subFrame' || Boolean(details.frame?.parent);
     if (!isSubframe) return false;
@@ -106,17 +162,21 @@ export const createPreviewSecurityController = (
     if (details.resourceType === 'subFrame') {
       return !isPreviewDocument(requestUrl, security.documentUrl);
     }
+    const identity = previewIdentityForFrame(details.frame, security.documentUrl);
+    if (!identity) return true;
     if (isLocalPreviewAsset(requestUrl, security.documentUrl)) return false;
     if (requestUrl.protocol === 'blob:' || requestUrl.protocol === 'data:') return false;
-    return requestUrl.protocol !== 'https:' || !security.allowedOrigins.has(requestUrl.origin);
+    const policy = security.policies.get(identity.frame.frameTreeNodeId);
+    return requestUrl.protocol !== 'https:'
+      || policy?.previewId !== identity.previewId
+      || !policy.allowedOrigins.has(requestUrl.origin);
   };
 
   return {
     attach: (webContents, previewDocumentUrl) => {
       const security: WindowPreviewSecurity = {
         documentUrl: new URL(previewDocumentUrl),
-        allowedOrigins: new Set(),
-        previewId: null,
+        policies: new Map(),
         webContents,
       };
       windows.set(webContents.id, security);
@@ -132,9 +192,12 @@ export const createPreviewSecurityController = (
               : windows.get(details.webContentsId);
             try {
               const blockedUrl = new URL(details.url);
-              if (security?.previewId && blockedUrl.protocol === 'https:') {
+              const identity = security
+                ? previewIdentityForFrame(details.frame, security.documentUrl)
+                : null;
+              if (security && identity && blockedUrl.protocol === 'https:') {
                 security.webContents.send?.(PREVIEW_REQUEST_BLOCKED_CHANNEL, {
-                  previewId: security.previewId,
+                  previewId: identity.previewId,
                   url: details.url,
                   origin: blockedUrl.origin,
                 });
@@ -147,6 +210,8 @@ export const createPreviewSecurityController = (
 
       webContents.on('will-frame-navigate', (details) => {
         if (details.isMainFrame) return;
+        const identity = previewIdentityForFrame(details.frame, security.documentUrl);
+        if (identity) security.policies.delete(identity.frame.frameTreeNodeId);
         let nextUrl: URL;
         try {
           nextUrl = new URL(details.url);
@@ -159,7 +224,7 @@ export const createPreviewSecurityController = (
             webContentsId: webContents.id,
             url: details.url,
             resourceType: 'subFrame',
-            frame: { parent: {} },
+            frame: details.frame,
           });
           details.preventDefault();
         }
@@ -177,8 +242,25 @@ export const createPreviewSecurityController = (
       }
       const security = windows.get(webContentsId);
       if (!security) throw new Error('Preview security is not attached');
-      security.allowedOrigins = new Set(request.allowedOrigins);
-      security.previewId = request.previewId;
+      prunePolicies(security);
+      const matches = security.webContents.mainFrame.framesInSubtree.filter((frame) => (
+        isLiveFrame(frame)
+        && frame.parent?.frameTreeNodeId === security.webContents.mainFrame.frameTreeNodeId
+        && previewIdFromUrl(frame.url, security.documentUrl) === request.previewId
+      ));
+      if (matches.length !== 1) throw new Error('Preview frame is not available');
+      security.policies.set(matches[0].frameTreeNodeId, {
+        allowedOrigins: new Set(request.allowedOrigins),
+        previewId: request.previewId,
+      });
+    },
+    release: (webContentsId, previewId) => {
+      if (!/^[A-Za-z0-9_-]+$/.test(previewId)) throw new Error('Invalid preview id');
+      const security = windows.get(webContentsId);
+      if (!security) return;
+      for (const [frameTreeNodeId, policy] of security.policies) {
+        if (policy.previewId === previewId) security.policies.delete(frameTreeNodeId);
+      }
     },
   };
 };

@@ -164,6 +164,11 @@ export const PreviewHost = ({ component, onPreviewPolicyChange }: PreviewHostPro
     if (error) acceptPreviewError(error);
   }), [acceptPreviewError, previewId]);
 
+  useEffect(() => () => {
+    const release = window.componentVault?.releasePreviewNetwork?.(previewId);
+    void release?.catch(() => undefined);
+  }, [previewId]);
+
   const reload = useCallback(() => {
     rateWindow.current = [];
     setComponentErrors({ componentId: component.id, items: [] });

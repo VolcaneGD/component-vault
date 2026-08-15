@@ -8,6 +8,7 @@ import {
 import { PreviewHost } from '../../src/renderer/src/features/preview/PreviewHost';
 
 const configurePreviewNetwork = vi.fn().mockResolvedValue(undefined);
+const releasePreviewNetwork = vi.fn().mockResolvedValue(undefined);
 let blockedRequestListener: ((event: {
   previewId: string;
   url: string;
@@ -16,11 +17,13 @@ let blockedRequestListener: ((event: {
 
 beforeEach(() => {
   configurePreviewNetwork.mockClear();
+  releasePreviewNetwork.mockClear();
   blockedRequestListener = undefined;
   Object.defineProperty(window, 'componentVault', {
     configurable: true,
     value: {
       configurePreviewNetwork,
+      releasePreviewNetwork,
       onPreviewRequestBlocked: (listener: typeof blockedRequestListener) => {
         blockedRequestListener = listener;
         return () => { blockedRequestListener = undefined; };
@@ -92,6 +95,16 @@ const readyPreview = async (iframe: HTMLIFrameElement) => {
 };
 
 describe('PreviewHost', () => {
+  it('releases only its preview instance when the frame unmounts', () => {
+    const { unmount } = render(<PreviewHost component={component()} />);
+    const previewId = previewIdFrom(screen.getByTitle('Component preview') as HTMLIFrameElement);
+
+    unmount();
+
+    expect(releasePreviewNetwork).toHaveBeenCalledOnce();
+    expect(releasePreviewNetwork).toHaveBeenCalledWith(previewId);
+  });
+
   it('loads the static child with the restricted opaque-origin sandbox', () => {
     render(<PreviewHost component={component()} />);
 

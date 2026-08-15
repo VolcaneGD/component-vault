@@ -28,6 +28,7 @@ export const IPC_CHANNELS = {
   settingsUpdate: 'settings:update',
   componentImportHtml: 'component:import-html',
   previewConfigureNetwork: 'preview:configure-network',
+  previewReleaseNetwork: 'preview:release-network',
 } as const;
 
 interface IpcHandlerRegistrar {
@@ -73,6 +74,19 @@ export const registerIpcHandlers = ({
     }
     previewSecurity.configure(event.sender.id, validatePreviewNetworkPolicy(request));
   });
+  ipcMain.handle(IPC_CHANNELS.previewReleaseNetwork, (event, previewId) => {
+    if (event.senderFrame !== event.sender.mainFrame) {
+      throw new Error('Preview network release must come from the main renderer frame');
+    }
+    previewSecurity.release(event.sender.id, validatePreviewId(previewId));
+  });
+};
+
+const validatePreviewId = (value: unknown): string => {
+  if (typeof value !== 'string' || !/^[A-Za-z0-9_-]+$/.test(value)) {
+    throw new Error('Invalid preview id');
+  }
+  return value;
 };
 
 const validatePreviewNetworkPolicy = (value: unknown): PreviewNetworkPolicyRequest => {

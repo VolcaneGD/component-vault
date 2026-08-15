@@ -20,6 +20,7 @@ const componentVaultApi: ComponentVaultApi = {
   saveAppSettings: patch => ipcRenderer.invoke(IPC_CHANNELS.settingsUpdate, patch),
   importHtmlFiles: (paths, options) => ipcRenderer.invoke(IPC_CHANNELS.componentImportHtml, paths, options),
   configurePreviewNetwork: request => ipcRenderer.invoke(IPC_CHANNELS.previewConfigureNetwork, request),
+  releasePreviewNetwork: previewId => ipcRenderer.invoke(IPC_CHANNELS.previewReleaseNetwork, previewId),
   onPreviewRequestBlocked: listener => {
     const receiveBlockedRequest = (_event: Electron.IpcRendererEvent, event: PreviewBlockedRequest) => listener(event);
     ipcRenderer.on(PREVIEW_REQUEST_BLOCKED_CHANNEL, receiveBlockedRequest);
