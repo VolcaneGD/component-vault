@@ -12,6 +12,7 @@ interface AppStore {
   selectedLibraryId: string | null;
   selectedComponentId: string | null;
   isHydrated: boolean;
+  mutationVersion: number;
   hydrate: () => Promise<void>;
   setViewMode: (viewMode: ViewMode) => void;
   setSelectedLibraryId: (libraryId: string | null) => void;
@@ -23,12 +24,13 @@ const persist = (patch: Partial<AppSettings>) => {
   void window.componentVault?.saveAppSettings?.(patch).catch(() => undefined);
 };
 
-export const useAppStore = create<AppStore>((set) => ({
+export const useAppStore = create<AppStore>((set, get) => ({
   settings: defaultAppSettings(),
   libraries: [],
   selectedLibraryId: null,
   selectedComponentId: null,
   isHydrated: false,
+  mutationVersion: 0,
   hydrate: async () => {
     const api = window.componentVault;
     if (!api) {
@@ -36,33 +38,46 @@ export const useAppStore = create<AppStore>((set) => ({
       return;
     }
 
+    const hydrationVersion = get().mutationVersion;
     const settingsPromise = api.getAppSettings?.().catch(() => defaultAppSettings())
       ?? Promise.resolve(defaultAppSettings());
     const librariesPromise = api.listLibraries?.().catch(() => [])
       ?? Promise.resolve([]);
     const [settings, libraries] = await Promise.all([settingsPromise, librariesPromise]);
-    set({
-      settings,
-      libraries,
-      selectedLibraryId: settings.lastLibraryId,
-      selectedComponentId: settings.lastComponentId,
-      isHydrated: true,
-    });
+    set((state) => state.mutationVersion === hydrationVersion
+      ? {
+        settings,
+        libraries,
+        selectedLibraryId: settings.lastLibraryId,
+        selectedComponentId: settings.lastComponentId,
+        isHydrated: true,
+      }
+      : { libraries, isHydrated: true });
   },
   setViewMode: (viewMode) => {
-    set((state) => ({ settings: { ...state.settings, viewMode } }));
+    set((state) => ({
+      settings: { ...state.settings, viewMode },
+      mutationVersion: state.mutationVersion + 1,
+    }));
     persist({ viewMode });
   },
   setSelectedLibraryId: (selectedLibraryId) => {
-    set({ selectedLibraryId, selectedComponentId: null });
+    set((state) => ({
+      selectedLibraryId,
+      selectedComponentId: null,
+      mutationVersion: state.mutationVersion + 1,
+    }));
     persist({ lastLibraryId: selectedLibraryId, lastComponentId: null });
   },
   setSelectedComponentId: (selectedComponentId) => {
-    set({ selectedComponentId });
+    set((state) => ({ selectedComponentId, mutationVersion: state.mutationVersion + 1 }));
     persist({ lastComponentId: selectedComponentId });
   },
   updateLayout: (patch) => {
-    set((state) => ({ settings: { ...state.settings, ...patch } }));
+    set((state) => ({
+      settings: { ...state.settings, ...patch },
+      mutationVersion: state.mutationVersion + 1,
+    }));
     persist(patch);
   },
 }));
