@@ -89,6 +89,36 @@ describe('LibraryService', () => {
     ).get(component.id)).toEqual({ component_id: component.id });
   });
 
+  it('keeps an abnormal recovery durable until the exact snapshot is acknowledged', () => {
+    const database = openTestDatabase();
+    const firstRun = createLibraryService(database);
+    firstRun.startSession();
+    const library = firstRun.saveLibrary({ name: 'Durable recovery', description: '' });
+    const component = firstRun.saveComponent(componentInput(library.id, 'Completed save'));
+
+    const secondRun = createLibraryService(database);
+    const expected = {
+      libraryId: library.id,
+      componentId: component.id,
+      completedAt: component.updatedAt,
+    };
+    expect(secondRun.startSession()).toEqual(expected);
+    expect(secondRun.getRecoverySnapshot()).toEqual(expected);
+    expect(secondRun.getRecoverySnapshot()).toEqual(expected);
+    expect(secondRun.ackRecoverySnapshot({
+      ...expected,
+      completedAt: '2026-08-15T00:00:00.001Z',
+    })).toBe(false);
+    expect(secondRun.getRecoverySnapshot()).toEqual(expected);
+
+    const thirdRun = createLibraryService(database);
+    expect(thirdRun.startSession()).toEqual(expected);
+    expect(thirdRun.getRecoverySnapshot()).toEqual(expected);
+    expect(thirdRun.ackRecoverySnapshot(expected)).toBe(true);
+    expect(thirdRun.ackRecoverySnapshot(expected)).toBe(false);
+    expect(thirdRun.getRecoverySnapshot()).toBeNull();
+  });
+
   it('stores one component with tags and preview policy atomically', () => {
     const service = createLibraryService(openTestDatabase());
     const library = service.saveLibrary({ name: 'UI Essentials', description: '' });

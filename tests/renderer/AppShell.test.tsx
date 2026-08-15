@@ -1,4 +1,5 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { StrictMode } from 'react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -421,6 +422,47 @@ describe('App shell navigation', () => {
 
     await waitFor(() => expect(screen.getByRole('main')).toHaveAttribute('data-view', 'studio'));
     expect(useAppStore.getState().selectedComponentId).toBe('component-restored-from-settings');
+  });
+
+  it('deduplicates StrictMode hydration and acknowledges recovery only after applying it', async () => {
+    const library: LibraryRecord = {
+      id: '7aa4a429-da7d-4ea0-bf8e-4deca38e95aa',
+      name: 'Recovered library',
+      description: '',
+      createdAt: '2026-08-15T00:00:00.000Z',
+      updatedAt: '2026-08-15T00:00:00.000Z',
+    };
+    const recovery = {
+      libraryId: library.id,
+      componentId: 'a19979d8-cb60-4eb8-bc5f-c905ba14adf0',
+      completedAt: '2026-08-15T00:00:01.000Z',
+    };
+    let resolveLibraries!: (libraries: LibraryRecord[]) => void;
+    const libraries = new Promise<LibraryRecord[]>((resolve) => { resolveLibraries = resolve; });
+    const getRecoverySnapshot = vi.fn().mockResolvedValue(recovery);
+    const ackRecoverySnapshot = vi.fn().mockResolvedValue(true);
+    Object.defineProperty(window, 'componentVault', {
+      configurable: true,
+      value: {
+        getAppSettings: vi.fn().mockResolvedValue(defaultAppSettings()),
+        listLibraries: vi.fn(() => libraries),
+        getRecoverySnapshot,
+        ackRecoverySnapshot,
+        saveAppSettings,
+      },
+    });
+
+    render(<StrictMode><App /></StrictMode>);
+    resolveLibraries([library]);
+
+    await waitFor(() => expect(useAppStore.getState()).toMatchObject({
+      selectedLibraryId: library.id,
+      selectedComponentId: recovery.componentId,
+      isHydrated: true,
+    }));
+    expect(getRecoverySnapshot).toHaveBeenCalledTimes(1);
+    expect(ackRecoverySnapshot).toHaveBeenCalledTimes(1);
+    expect(ackRecoverySnapshot).toHaveBeenCalledWith(recovery);
   });
 
   it('opens standalone export from the persistent sidebar for the active library', async () => {

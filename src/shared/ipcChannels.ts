@@ -2,6 +2,7 @@ export const IPC_CHANNELS = {
   appGetVersion: 'app:get-version',
   appGetElectronVersion: 'app:get-electron-version',
   appGetRecoverySnapshot: 'app:get-recovery-snapshot',
+  appAckRecoverySnapshot: 'app:ack-recovery-snapshot',
   appOpenExternal: 'app:open-external',
   libraryList: 'library:list',
   librarySave: 'library:save',

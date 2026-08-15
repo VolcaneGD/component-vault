@@ -65,6 +65,7 @@ const reorderLatestGenerations = new Map<string, number>();
 const reorderConfirmedOrders = new Map<string, string[]>();
 const draftOperationTails = new Map<string, Promise<ComponentRecord>>();
 const cancelledDraftIds = new Set<string>();
+let hydrationInFlight: Promise<void> | null = null;
 
 const isSoftDeleteToken = (value: unknown): value is SoftDeleteToken => {
   if (!value || typeof value !== 'object') return false;
@@ -169,44 +170,60 @@ export const useAppStore = create<AppStore>((set, get) => ({
   isHydrated: false,
   mutationVersion: 0,
   pendingDeletions: [],
-  hydrate: async () => {
-    const api = window.componentVault;
-    if (!api) {
-      set((state) => ({
-        isHydrated: true,
-        draftOrigins: retainSelectedDraftOrigin(state.draftOrigins, state.selectedComponentId),
-      }));
-      return;
-    }
-
-    const hydrationVersion = get().mutationVersion;
-    const settingsPromise = api.getAppSettings?.().catch(() => defaultAppSettings())
-      ?? Promise.resolve(defaultAppSettings());
-    const librariesPromise = api.listLibraries?.().catch(() => [])
-      ?? Promise.resolve([]);
-    const recoveryPromise = api.getRecoverySnapshot?.().catch(() => null)
-      ?? Promise.resolve(null);
-    const [settings, libraries, recovery] = await Promise.all([
-      settingsPromise, librariesPromise, recoveryPromise,
-    ]);
-    const recoveredLibraryId = recovery
-      && libraries.some((library) => library.id === recovery.libraryId)
-      ? recovery.libraryId
-      : null;
-    set((state) => state.mutationVersion === hydrationVersion
-      ? {
-        settings,
-        libraries,
-        selectedLibraryId: recoveredLibraryId ?? settings.lastLibraryId,
-        selectedComponentId: recoveredLibraryId ? recovery!.componentId : settings.lastComponentId,
-        draftOrigins: {},
-        isHydrated: true,
+  hydrate: () => {
+    if (hydrationInFlight) return hydrationInFlight;
+    const hydration = (async () => {
+      const api = window.componentVault;
+      if (!api) {
+        set((state) => ({
+          isHydrated: true,
+          draftOrigins: retainSelectedDraftOrigin(state.draftOrigins, state.selectedComponentId),
+        }));
+        return;
       }
-      : {
-        libraries,
-        draftOrigins: retainSelectedDraftOrigin(state.draftOrigins, state.selectedComponentId),
-        isHydrated: true,
+
+      const hydrationVersion = get().mutationVersion;
+      const settingsPromise = api.getAppSettings?.().catch(() => defaultAppSettings())
+        ?? Promise.resolve(defaultAppSettings());
+      const librariesPromise = api.listLibraries?.().catch(() => [])
+        ?? Promise.resolve([]);
+      const recoveryPromise = api.getRecoverySnapshot?.().catch(() => null)
+        ?? Promise.resolve(null);
+      const [settings, libraries, recovery] = await Promise.all([
+        settingsPromise, librariesPromise, recoveryPromise,
+      ]);
+      const recoveredLibraryId = recovery
+        && libraries.some((library) => library.id === recovery.libraryId)
+        ? recovery.libraryId
+        : null;
+      let recoveryApplied = false;
+      set((state) => {
+        if (state.mutationVersion === hydrationVersion) {
+          recoveryApplied = Boolean(recovery && recoveredLibraryId);
+          return {
+            settings,
+            libraries,
+            selectedLibraryId: recoveredLibraryId ?? settings.lastLibraryId,
+            selectedComponentId: recoveredLibraryId ? recovery!.componentId : settings.lastComponentId,
+            draftOrigins: {},
+            isHydrated: true,
+          };
+        }
+        return {
+          libraries,
+          draftOrigins: retainSelectedDraftOrigin(state.draftOrigins, state.selectedComponentId),
+          isHydrated: true,
+        };
       });
+      if (recoveryApplied && recovery) {
+        await api.ackRecoverySnapshot?.(recovery).catch(() => false);
+      }
+    })();
+    hydrationInFlight = hydration;
+    void hydration.finally(() => {
+      if (hydrationInFlight === hydration) hydrationInFlight = null;
+    }).catch(() => undefined);
+    return hydration;
   },
   setViewMode: (viewMode) => {
     set((state) => ({

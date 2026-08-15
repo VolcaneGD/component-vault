@@ -25,7 +25,8 @@ export interface LibraryService {
   reorderComponents: (libraryId: string, componentIds: string[]) => void;
   searchComponents: (libraryId: string, query: string) => ComponentRecord[];
   startSession: () => RecoverySnapshot | null;
-  consumeRecoverySnapshot: () => RecoverySnapshot | null;
+  getRecoverySnapshot: () => RecoverySnapshot | null;
+  ackRecoverySnapshot: (snapshot: RecoverySnapshot) => boolean;
   markCleanShutdown: () => void;
 }
 
@@ -53,12 +54,12 @@ interface RecoverySessionState {
 
 const DELETE_UNDO_WINDOW_MS = 8_000;
 const RECOVERY_SESSION_KEY = 'recovery-session';
+const RECOVERY_PENDING_KEY = 'recovery-pending';
 
 export const createLibraryService = (
   { db }: DatabaseContext,
   { now = () => new Date() }: LibraryServiceOptions = {},
 ): LibraryService => {
-  let pendingRecoverySnapshot: RecoverySnapshot | null = null;
   const listLibraries = (): LibraryRecord[] => db.prepare(
     'SELECT * FROM libraries ORDER BY created_at ASC, id ASC',
   ).all().map(toLibrary);
@@ -211,21 +212,31 @@ export const createLibraryService = (
 
   const startSession = (): RecoverySnapshot | null => {
     purgeExpiredDeletedComponents();
-    const previous = readRecoverySession(db);
-    const candidate = previous?.active && previous.lastCompleted
-      && getComponent(previous.lastCompleted.componentId)
-      ? previous.lastCompleted
-      : null;
-    pendingRecoverySnapshot = candidate;
-    writeRecoverySession(db, { active: true, lastCompleted: null });
-    return candidate;
+    return db.transaction(() => {
+      const previous = readRecoverySession(db);
+      const existingPending = readPendingRecovery(db);
+      const durableCandidate = existingPending && getComponent(existingPending.componentId)
+        ? existingPending
+        : null;
+      const previousSessionCandidate = previous?.active && previous.lastCompleted
+        && getComponent(previous.lastCompleted.componentId)
+        ? previous.lastCompleted
+        : null;
+      const candidate = durableCandidate ?? previousSessionCandidate;
+      if (candidate) writePendingRecovery(db, candidate);
+      else clearPendingRecovery(db);
+      writeRecoverySession(db, { active: true, lastCompleted: null });
+      return candidate;
+    })();
   };
 
-  const consumeRecoverySnapshot = (): RecoverySnapshot | null => {
-    const snapshot = pendingRecoverySnapshot;
-    pendingRecoverySnapshot = null;
-    return snapshot;
-  };
+  const getRecoverySnapshot = (): RecoverySnapshot | null => readPendingRecovery(db);
+
+  const ackRecoverySnapshot = db.transaction((snapshot: RecoverySnapshot): boolean => {
+    const pending = readPendingRecovery(db);
+    if (!pending || !sameRecoverySnapshot(pending, snapshot)) return false;
+    return clearPendingRecovery(db) > 0;
+  });
 
   const markCleanShutdown = (): void => {
     const current = readRecoverySession(db);
@@ -235,7 +246,7 @@ export const createLibraryService = (
   return {
     listLibraries, saveLibrary, deleteLibrary, listComponents, getComponent, saveComponent,
     deleteComponent, restoreDeletedComponent, finalizeDeletedComponent, purgeExpiredDeletedComponents,
-    reorderComponents, searchComponents, startSession, consumeRecoverySnapshot, markCleanShutdown,
+    reorderComponents, searchComponents, startSession, getRecoverySnapshot, ackRecoverySnapshot, markCleanShutdown,
   };
 };
 
@@ -265,6 +276,37 @@ const writeRecoverySession = (db: DatabaseContext['db'], state: RecoverySessionS
     ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
     .run(RECOVERY_SESSION_KEY, JSON.stringify(state));
 };
+
+const readPendingRecovery = (db: DatabaseContext['db']): RecoverySnapshot | null => {
+  const row = db.prepare('SELECT value FROM app_settings WHERE key = ?').get(RECOVERY_PENDING_KEY) as
+    | { value: string }
+    | undefined;
+  if (!row) return null;
+  try {
+    const value = JSON.parse(row.value) as Partial<RecoverySnapshot>;
+    return typeof value.libraryId === 'string'
+      && typeof value.componentId === 'string'
+      && typeof value.completedAt === 'string'
+      ? value as RecoverySnapshot
+      : null;
+  } catch {
+    return null;
+  }
+};
+
+const writePendingRecovery = (db: DatabaseContext['db'], snapshot: RecoverySnapshot): void => {
+  db.prepare(`INSERT INTO app_settings (key, value) VALUES (?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
+    .run(RECOVERY_PENDING_KEY, JSON.stringify(snapshot));
+};
+
+const clearPendingRecovery = (db: DatabaseContext['db']): number =>
+  db.prepare('DELETE FROM app_settings WHERE key = ?').run(RECOVERY_PENDING_KEY).changes;
+
+const sameRecoverySnapshot = (left: RecoverySnapshot, right: RecoverySnapshot): boolean =>
+  left.libraryId === right.libraryId
+  && left.componentId === right.componentId
+  && left.completedAt === right.completedAt;
 
 const toLibrary = (row: unknown): LibraryRecord => {
   const library = row as LibraryRow;

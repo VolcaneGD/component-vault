@@ -55,7 +55,6 @@ app.whenReady().then(() => {
     ipcMain,
     appVersion: () => app.getVersion(),
     electronVersion: () => process.versions.electron,
-    recoverySnapshot: () => libraryService?.consumeRecoverySnapshot() ?? null,
     libraries: libraryService,
     settings: createSettingsService(databaseContext),
     previewSecurity,

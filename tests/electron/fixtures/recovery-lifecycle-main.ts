@@ -13,7 +13,9 @@ if (!databasePath || !resultPath || !action) {
 
 let database: DatabaseContext | null = null;
 let service: LibraryService | null = null;
-let cleanShutdown = action === 'save-clean' || action === 'inspect-clean';
+const cleanShutdown = action === 'save-clean'
+  || action === 'inspect-clean'
+  || action === 'inspect-ack-clean';
 
 const component = (id: string) => ({
   id,
@@ -46,8 +48,8 @@ void app.whenReady().then(async () => {
   database = openDatabase(databasePath);
   service = createLibraryService(database);
   const recovery = service.startSession();
-  const consumed = service.consumeRecoverySnapshot();
-  const consumedAgain = service.consumeRecoverySnapshot();
+  const fetched = service.getRecoverySnapshot();
+  const fetchedAgain = service.getRecoverySnapshot();
 
   if (action === 'save-clean' || action === 'save-abnormal') {
     service.saveLibrary({
@@ -58,9 +60,26 @@ void app.whenReady().then(async () => {
     service.saveComponent(component(action === 'save-clean' ? 'clean-x' : 'abnormal-z'));
   }
 
+  const acknowledged = action === 'inspect-ack-clean' && fetched
+    ? service.ackRecoverySnapshot(fetched)
+    : null;
+  const acknowledgedAgain = action === 'inspect-ack-clean' && fetched
+    ? service.ackRecoverySnapshot(fetched)
+    : null;
+  const afterAcknowledgement = action === 'inspect-ack-clean'
+    ? service.getRecoverySnapshot()
+    : undefined;
+
   const testWindow = new BrowserWindow({ show: false });
   await testWindow.loadURL('data:text/html,<title>Recovery lifecycle</title>');
-  writeFileSync(resultPath, JSON.stringify({ recovery, consumed, consumedAgain }), 'utf8');
+  writeFileSync(resultPath, JSON.stringify({
+    recovery,
+    fetched,
+    fetchedAgain,
+    acknowledged,
+    acknowledgedAgain,
+    afterAcknowledgement,
+  }), 'utf8');
 });
 
 app.on('window-all-closed', () => {

@@ -24,13 +24,20 @@ const setup = (destination: string, canceled = false) => {
   const handlers = new Map<string, (...args: unknown[]) => unknown>();
   const clipboardWrite = vi.fn();
   const openExternal = vi.fn().mockResolvedValue(undefined);
+  const recovery = {
+    libraryId: '7aa4a429-da7d-4ea0-bf8e-4deca38e95aa',
+    componentId: 'a19979d8-cb60-4eb8-bc5f-c905ba14adf0',
+    completedAt: '2026-08-15T00:00:01.000Z',
+  };
+  const getRecoverySnapshot = vi.fn(() => recovery);
+  const ackRecoverySnapshot = vi.fn((candidate) =>
+    JSON.stringify(candidate) === JSON.stringify(recovery));
   const mainFrame = {};
   registerIpcHandlers({
     ipcMain: { handle: (channel, listener) => handlers.set(channel, listener as (...args: unknown[]) => unknown) },
     appVersion: () => '1.0.0',
     electronVersion: () => '43.4.0',
-    recoverySnapshot: () => null,
-    libraries: {} as never,
+    libraries: { getRecoverySnapshot, ackRecoverySnapshot } as never,
     settings: {} as never,
     previewSecurity: {} as never,
     clipboard: { writeText: clipboardWrite },
@@ -43,11 +50,38 @@ const setup = (destination: string, canceled = false) => {
     handlers,
     clipboardWrite,
     openExternal,
+    recovery,
+    getRecoverySnapshot,
+    ackRecoverySnapshot,
     event: { senderFrame: mainFrame, sender: { mainFrame, id: 1 } },
   };
 };
 
 describe('export IPC', () => {
+  it('returns recovery idempotently and validates acknowledgement from the main frame', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'component-vault-ipc-recovery-'));
+    try {
+      const { handlers, event, recovery, getRecoverySnapshot, ackRecoverySnapshot } = setup(
+        join(directory, 'unused.html'),
+      );
+      expect(await handlers.get(IPC_CHANNELS.appGetRecoverySnapshot)?.(event)).toEqual(recovery);
+      expect(await handlers.get(IPC_CHANNELS.appGetRecoverySnapshot)?.(event)).toEqual(recovery);
+      expect(getRecoverySnapshot).toHaveBeenCalledTimes(2);
+      expect(await handlers.get(IPC_CHANNELS.appAckRecoverySnapshot)?.(event, recovery)).toBe(true);
+      expect(ackRecoverySnapshot).toHaveBeenCalledWith(recovery);
+      await expect(handlers.get(IPC_CHANNELS.appAckRecoverySnapshot)?.(
+        { ...event, senderFrame: {} },
+        recovery,
+      )).rejects.toThrow('main renderer frame');
+      await expect(handlers.get(IPC_CHANNELS.appAckRecoverySnapshot)?.(
+        event,
+        { ...recovery, completedAt: 'not-a-date' },
+      )).rejects.toThrow('recovery completed timestamp');
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   it('opens only the attributed PropertyHTML source from the main renderer frame', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'component-vault-ipc-link-'));
     try {

@@ -53,8 +53,11 @@ describe('real Electron recovery lifecycle', () => {
       });
       return JSON.parse(readFileSync(resultPath, 'utf8')) as {
         recovery: { componentId: string } | null;
-        consumed: { componentId: string } | null;
-        consumedAgain: { componentId: string } | null;
+        fetched: { componentId: string } | null;
+        fetchedAgain: { componentId: string } | null;
+        acknowledged: boolean | null;
+        acknowledgedAgain: boolean | null;
+        afterAcknowledgement?: { componentId: string } | null;
       };
     };
 
@@ -77,25 +80,41 @@ describe('real Electron recovery lifecycle', () => {
 
     expect(await launch('no-save-abnormal')).toEqual({
       recovery: null,
-      consumed: null,
-      consumedAgain: null,
+      fetched: null,
+      fetchedAgain: null,
+      acknowledged: null,
+      acknowledgedAgain: null,
     });
     await terminateAbnormally();
 
     expect(await launch('inspect-clean')).toEqual({
       recovery: null,
-      consumed: null,
-      consumedAgain: null,
+      fetched: null,
+      fetchedAgain: null,
+      acknowledged: null,
+      acknowledgedAgain: null,
     });
     await closeCleanly();
 
     await launch('save-abnormal');
     await terminateAbnormally();
 
-    expect(await launch('inspect-clean')).toEqual({
+    expect(await launch('inspect-no-ack-abnormal')).toEqual({
       recovery: expect.objectContaining({ componentId: 'abnormal-z' }),
-      consumed: expect.objectContaining({ componentId: 'abnormal-z' }),
-      consumedAgain: null,
+      fetched: expect.objectContaining({ componentId: 'abnormal-z' }),
+      fetchedAgain: expect.objectContaining({ componentId: 'abnormal-z' }),
+      acknowledged: null,
+      acknowledgedAgain: null,
+    });
+    await terminateAbnormally();
+
+    expect(await launch('inspect-ack-clean')).toEqual({
+      recovery: expect.objectContaining({ componentId: 'abnormal-z' }),
+      fetched: expect.objectContaining({ componentId: 'abnormal-z' }),
+      fetchedAgain: expect.objectContaining({ componentId: 'abnormal-z' }),
+      acknowledged: true,
+      acknowledgedAgain: false,
+      afterAcknowledgement: null,
     });
     await closeCleanly();
   }, 45_000);

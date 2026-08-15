@@ -33,7 +33,6 @@ interface RegisterIpcDependencies {
   ipcMain: IpcHandlerRegistrar;
   appVersion: () => string;
   electronVersion: () => string;
-  recoverySnapshot: () => RecoverySnapshot | null;
   libraries: LibraryService;
   settings: SettingsService;
   previewSecurity: PreviewSecurityController;
@@ -52,7 +51,6 @@ export const registerIpcHandlers = ({
   ipcMain,
   appVersion,
   electronVersion,
-  recoverySnapshot,
   libraries,
   settings,
   previewSecurity,
@@ -62,7 +60,11 @@ export const registerIpcHandlers = ({
 }: RegisterIpcDependencies): void => {
   ipcMain.handle(IPC_CHANNELS.appGetVersion, () => appVersion());
   ipcMain.handle(IPC_CHANNELS.appGetElectronVersion, () => electronVersion());
-  ipcMain.handle(IPC_CHANNELS.appGetRecoverySnapshot, () => recoverySnapshot());
+  ipcMain.handle(IPC_CHANNELS.appGetRecoverySnapshot, () => libraries.getRecoverySnapshot());
+  ipcMain.handle(IPC_CHANNELS.appAckRecoverySnapshot, async (event, snapshot) => {
+    assertMainFrame(event, 'Recovery acknowledgement');
+    return libraries.ackRecoverySnapshot(validateRecoverySnapshot(snapshot));
+  });
   ipcMain.handle(IPC_CHANNELS.appOpenExternal, async (event, url) => {
     assertMainFrame(event, 'External links');
     await externalLinks.openExternal(validateExternalUrl(url));
@@ -169,6 +171,15 @@ const validateSoftDeleteToken = (value: unknown): SoftDeleteToken => {
     componentId: validateId(token.componentId, 'component id'),
     deletedAt: validateIsoTimestamp(token.deletedAt, 'deleted timestamp'),
     expiresAt: validateIsoTimestamp(token.expiresAt, 'delete expiry'),
+  };
+};
+
+const validateRecoverySnapshot = (value: unknown): RecoverySnapshot => {
+  const snapshot = record(value, 'recovery snapshot');
+  return {
+    libraryId: validateId(snapshot.libraryId, 'recovery library id'),
+    componentId: validateId(snapshot.componentId, 'recovery component id'),
+    completedAt: validateIsoTimestamp(snapshot.completedAt, 'recovery completed timestamp'),
   };
 };
 

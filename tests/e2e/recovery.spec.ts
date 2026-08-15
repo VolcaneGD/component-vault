@@ -33,12 +33,15 @@ test('relaunch after an abnormal termination recovers only the last completed au
       componentId: completed.id,
       completedAt: completed.updatedAt,
     });
-    expect(relaunched.consumeRecoverySnapshot()).toEqual({
+    const recovery = {
       libraryId: library.id,
       componentId: completed.id,
       completedAt: completed.updatedAt,
-    });
-    expect(relaunched.consumeRecoverySnapshot()).toBeNull();
+    };
+    expect(relaunched.getRecoverySnapshot()).toEqual(recovery);
+    expect(relaunched.getRecoverySnapshot()).toEqual(recovery);
+    expect(relaunched.ackRecoverySnapshot(recovery)).toBe(true);
+    expect(relaunched.getRecoverySnapshot()).toBeNull();
     expect(relaunched.getComponent(completed.id)?.name).toBe('Completed autosave');
     relaunched.markCleanShutdown();
     relaunchedDatabase.close();
@@ -73,14 +76,14 @@ test('a clean save cannot leak through a later no-save crash', async () => {
     databases.push(secondDatabase);
     const secondRun = createLibraryService(secondDatabase);
     expect(secondRun.startSession()).toBeNull();
-    expect(secondRun.consumeRecoverySnapshot()).toBeNull();
+    expect(secondRun.getRecoverySnapshot()).toBeNull();
     secondDatabase.close(); // Abnormal termination before any save in this session.
 
     const thirdDatabase = openDatabase(path);
     databases.push(thirdDatabase);
     const thirdRun = createLibraryService(thirdDatabase);
     expect(thirdRun.startSession()).toBeNull();
-    expect(thirdRun.consumeRecoverySnapshot()).toBeNull();
+    expect(thirdRun.getRecoverySnapshot()).toBeNull();
     thirdDatabase.close();
   } finally {
     for (const database of databases) {

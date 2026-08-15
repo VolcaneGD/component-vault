@@ -10,6 +10,7 @@ const componentVaultApi: ComponentVaultApi = {
   getAppVersion: () => ipcRenderer.invoke(IPC_CHANNELS.appGetVersion),
   getElectronVersion: () => ipcRenderer.invoke(IPC_CHANNELS.appGetElectronVersion),
   getRecoverySnapshot: () => ipcRenderer.invoke(IPC_CHANNELS.appGetRecoverySnapshot),
+  ackRecoverySnapshot: snapshot => ipcRenderer.invoke(IPC_CHANNELS.appAckRecoverySnapshot, snapshot),
   openExternal: url => ipcRenderer.invoke(IPC_CHANNELS.appOpenExternal, url),
   listLibraries: () => ipcRenderer.invoke(IPC_CHANNELS.libraryList),
   saveLibrary: library => ipcRenderer.invoke(IPC_CHANNELS.librarySave, library),

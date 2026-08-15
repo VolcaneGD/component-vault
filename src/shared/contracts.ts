@@ -151,6 +151,7 @@ export interface ComponentVaultApi {
   getAppVersion: () => Promise<string>;
   getElectronVersion: () => Promise<string>;
   getRecoverySnapshot: () => Promise<RecoverySnapshot | null>;
+  ackRecoverySnapshot: (snapshot: RecoverySnapshot) => Promise<boolean>;
   openExternal: (url: string) => Promise<void>;
   listLibraries: () => Promise<LibraryRecord[]>;
   saveLibrary: (library: LibrarySaveInput) => Promise<LibraryRecord>;
