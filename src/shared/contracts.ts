@@ -105,8 +105,8 @@ export interface ExportPayload {
 export type ExportCopyKind = 'html' | 'css' | 'javascript' | 'css-linked-html' | 'full-code';
 
 export type SaveFileResult =
-  | { ok: true; path: string; html?: string }
-  | { ok: false; cancelled?: boolean; message: string; html?: string };
+  | { ok: true; path: string }
+  | { ok: false; cancelled?: boolean; message: string };
 
 export type ImportResult =
   | { ok: true; draft: ComponentDraft }

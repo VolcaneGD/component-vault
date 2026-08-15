@@ -2,6 +2,7 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Script } from 'node:vm';
+import { gzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import type { ExportPayload } from '../../src/shared/contracts';
 import {
@@ -96,6 +97,69 @@ describe('standalone HTML export', () => {
     expect(parseComponentVaultHtml(`<!--${'x'.repeat((25 * 1024 * 1024) + 1)}-->`)).toBeNull();
   });
 
+  it('accepts the exact UTF-8 code byte boundary and rejects one byte over it', async () => {
+    const exactJapaneseBoundary = `${'界'.repeat(666_666)}ab`;
+    const exact = payload({
+      components: [{ ...payload().components[0], html: exactJapaneseBoundary, css: '', javascript: '' }],
+    });
+
+    expect(Buffer.byteLength(exactJapaneseBoundary, 'utf8')).toBe(2_000_000);
+    const html = await createStandaloneHtml(exact);
+    expect(parseComponentVaultHtml(html)?.components[0].html).toBe(exactJapaneseBoundary);
+
+    await expect(createStandaloneHtml({
+      ...exact,
+      components: [{ ...exact.components[0], html: `${exactJapaneseBoundary}x` }],
+    })).rejects.toThrow('Invalid Component Vault export payload');
+  });
+
+  it('rejects a single compressed component before inflating beyond its allocation limit', () => {
+    const inflatedBomb = JSON.stringify({
+      ...payload().components[0],
+      padding: 'x'.repeat((6 * 1024 * 1024) + 1),
+    });
+    const source = embeddedEnvelope([
+      gzipSync(Buffer.from(inflatedBomb, 'utf8')).toString('base64'),
+    ]);
+
+    expect(parseComponentVaultHtml(source)).toBeNull();
+  });
+
+  it('rejects individually valid compressed components that exceed the cumulative inflated budget', () => {
+    const largeComponent = {
+      ...payload().components[0],
+      html: 'x'.repeat(1_900_000),
+      css: '',
+      javascript: '',
+    };
+    const entries = Array.from({ length: 7 }, (_, index) => gzipSync(Buffer.from(JSON.stringify({
+      ...largeComponent,
+      name: `Component ${index}`,
+    }), 'utf8')).toString('base64'));
+
+    expect(parseComponentVaultHtml(embeddedEnvelope(entries))).toBeNull();
+  });
+
+  it('rejects an export over the cumulative budget before generating standalone HTML', async () => {
+    const largeComponent = {
+      ...payload().components[0],
+      html: 'x'.repeat(1_900_000),
+      css: '',
+      javascript: '',
+    };
+    const oversized = payload({
+      components: Array.from({ length: 7 }, (_, index) => ({
+        ...largeComponent,
+        name: `Component ${index}`,
+      })),
+    });
+    const accepted = { ...oversized, components: oversized.components.slice(0, 6) };
+
+    const acceptedHtml = await createStandaloneHtml(accepted);
+    expect(parseComponentVaultHtml(acceptedHtml)?.components).toHaveLength(6);
+    await expect(createStandaloneHtml(oversized)).rejects.toThrow('Export payload exceeds the cumulative size limit');
+  });
+
   it('creates distinct copy forms and only includes JavaScript in full code', () => {
     const component = payload().components[0];
 
@@ -115,6 +179,10 @@ describe('standalone HTML export', () => {
     ['  Hero / Card:*?  ', 'Hero-Card.html'],
     ['...', 'component.html'],
     ['Primary Button', 'Primary-Button.css'],
+    ['NUL.any.css', 'NUL-file.any.css'],
+    ['CON.foo', 'CON-file.foo.css'],
+    ['lPt9.backup.CSS', 'lPt9-file.backup.css'],
+    ['aux...   ', 'aux-file.css'],
   ])('sanitizes download filename %s', (name, expected) => {
     const extension = expected.endsWith('.css') ? '.css' : '.html';
     expect(sanitizeDownloadFileName(name, extension)).toBe(expected);
@@ -186,3 +254,13 @@ describe('standalone HTML export', () => {
     }
   });
 });
+
+const embeddedEnvelope = (componentData: string[]): string => {
+  const envelope = {
+    format: 'component-vault',
+    version: 1,
+    library: { name: 'Compressed fixtures', description: '' },
+    components: componentData.map((data) => ({ encoding: 'gzip-base64', data })),
+  };
+  return `<script id="component-vault-data" type="application/json">${JSON.stringify(envelope)}</script>`;
+};

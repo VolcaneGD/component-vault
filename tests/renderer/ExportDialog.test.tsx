@@ -86,7 +86,7 @@ describe('ExportDialog', () => {
   });
 
   it('keeps the dialog retryable when saving fails', async () => {
-    saveStandaloneHtml.mockResolvedValueOnce({ ok: false, message: 'disk unavailable', html: '<!doctype html>' });
+    saveStandaloneHtml.mockResolvedValueOnce({ ok: false, message: 'disk unavailable' });
     const user = userEvent.setup();
     render(<ExportDialog library={library} components={[component('one', 'One')]} />);
 

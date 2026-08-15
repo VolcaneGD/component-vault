@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -20,7 +20,7 @@ const exportPayload = (): ExportPayload => ({
   }],
 });
 
-const setup = (destination: string) => {
+const setup = (destination: string, canceled = false) => {
   const handlers = new Map<string, (...args: unknown[]) => unknown>();
   const clipboardWrite = vi.fn();
   const mainFrame = {};
@@ -31,7 +31,9 @@ const setup = (destination: string) => {
     settings: {} as never,
     previewSecurity: {} as never,
     clipboard: { writeText: clipboardWrite },
-    dialogs: { showSaveDialog: vi.fn().mockResolvedValue({ canceled: false, filePath: destination }) },
+    dialogs: { showSaveDialog: vi.fn().mockResolvedValue(canceled
+      ? { canceled: true }
+      : { canceled: false, filePath: destination }) },
   });
   return {
     handlers,
@@ -84,6 +86,32 @@ describe('export IPC', () => {
       );
       expect(result).toMatchObject({ ok: true, path: destination });
       expect(readFileSync(destination, 'utf8')).toBe('button { color: red; }');
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('returns a bounded status contract without the generated HTML on cancellation or failure', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'component-vault-ipc-contract-'));
+    const failingDestination = join(directory, 'existing-directory');
+    mkdirSync(failingDestination);
+    try {
+      const cancelled = setup(join(directory, 'cancelled.html'), true);
+      const cancellation = await cancelled.handlers.get(IPC_CHANNELS.exportSaveStandalone)?.(
+        cancelled.event,
+        exportPayload(),
+      ) as Record<string, unknown>;
+      expect(cancellation).toEqual({ ok: false, cancelled: true, message: 'Save cancelled' });
+      expect(cancellation).not.toHaveProperty('html');
+
+      const failed = setup(failingDestination);
+      const failure = await failed.handlers.get(IPC_CHANNELS.exportSaveStandalone)?.(
+        failed.event,
+        exportPayload(),
+      ) as Record<string, unknown>;
+      expect(failure).toMatchObject({ ok: false, message: expect.any(String) });
+      expect(failure).not.toHaveProperty('html');
+      expect(JSON.stringify(failure).length).toBeLessThan(1_024);
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }

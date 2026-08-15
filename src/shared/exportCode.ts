@@ -1,18 +1,22 @@
 import type { ExportComponent, ExportCopyKind } from './contracts';
 
 export const sanitizeDownloadFileName = (name: string, extension: '.html' | '.css'): string => {
-  const trimmed = String(name).trim();
-  const lastDot = trimmed.lastIndexOf('.');
-  const lastSeparator = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'));
-  const withoutExtension = lastDot > lastSeparator ? trimmed.slice(0, lastDot) : trimmed;
-  let safe = withoutExtension
+  const trimmed = String(name).trim().replace(/[. ]+$/g, '');
+  const withoutRequestedExtension = trimmed.toLowerCase().endsWith(extension)
+    ? trimmed.slice(0, -extension.length)
+    : trimmed;
+  let safe = withoutRequestedExtension
     .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '-')
     .replace(/\s+/g, '-')
     .replace(/-+/g, '-')
     .replace(/^[. -]+|[. -]+$/g, '')
     .slice(0, 120);
   if (!safe) safe = 'component';
-  if (/^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(safe)) safe += '-file';
+  const firstDot = safe.indexOf('.');
+  const deviceBaseName = firstDot === -1 ? safe : safe.slice(0, firstDot);
+  if (/^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(deviceBaseName)) {
+    safe = `${deviceBaseName}-file${safe.slice(deviceBaseName.length)}`;
+  }
   return `${safe}${extension}`;
 };
 

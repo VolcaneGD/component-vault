@@ -84,12 +84,12 @@ export const registerIpcHandlers = ({
       filters: [{ name: 'HTML document', extensions: ['html'] }],
     });
     if (saveDialog.canceled || !saveDialog.filePath) {
-      return { ok: false, cancelled: true, message: 'Save cancelled', html } as const;
+      return { ok: false, cancelled: true, message: 'Save cancelled' } as const;
     }
     const result = await saveStandaloneHtmlAtomically(saveDialog.filePath, html);
     return result.ok
       ? { ok: true, path: result.path } as const
-      : result;
+      : { ok: false, message: boundedSaveError(result.message) } as const;
   });
   ipcMain.handle(IPC_CHANNELS.exportSaveCss, async (event, suggestedFileName, css) => {
     assertMainFrame(event, 'CSS export');
@@ -109,7 +109,7 @@ export const registerIpcHandlers = ({
     const result = await saveStandaloneHtmlAtomically(saveDialog.filePath, content);
     return result.ok
       ? { ok: true, path: result.path } as const
-      : { ok: false, message: result.message } as const;
+      : { ok: false, message: boundedSaveError(result.message) } as const;
   });
   ipcMain.handle(IPC_CHANNELS.previewConfigureNetwork, (event, request) => {
     if (event.senderFrame !== event.sender.mainFrame) {
@@ -124,6 +124,9 @@ export const registerIpcHandlers = ({
     previewSecurity.release(event.sender.id, validatePreviewId(previewId));
   });
 };
+
+const boundedSaveError = (message: string): string =>
+  (message.trim() || 'Unable to save file').slice(0, 512);
 
 const assertMainFrame = (event: IpcMainInvokeEvent, operation: string): void => {
   if (event.senderFrame !== event.sender.mainFrame) {

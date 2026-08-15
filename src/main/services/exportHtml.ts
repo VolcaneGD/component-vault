@@ -11,10 +11,12 @@ export { createCopyText, sanitizeDownloadFileName } from '../../shared/exportCod
 
 const FORMAT = 'component-vault';
 const VERSION = 1;
-const MAX_SOURCE_CHARACTERS = 25 * 1024 * 1024;
+const MAX_SOURCE_BYTES = 25 * 1024 * 1024;
 const MAX_COMPONENTS = 1_000;
 const MAX_ENCODED_COMPONENT_CHARACTERS = 10 * 1024 * 1024;
 const MAX_INFLATED_COMPONENT_BYTES = 6 * 1024 * 1024;
+const MAX_TOTAL_INFLATED_COMPONENT_BYTES = 12 * 1024 * 1024;
+const MAX_CODE_BYTES = 2_000_000;
 
 interface EmbeddedComponent {
   encoding: 'gzip-base64';
@@ -35,22 +37,39 @@ export type AtomicSaveResult =
 export const createStandaloneHtml = async (payload: ExportPayload): Promise<string> => {
   const validated = validateExportPayload(payload);
   if (!validated) throw new Error('Invalid Component Vault export payload');
+  const serializedComponents: Buffer[] = [];
+  let totalInflatedBytes = 0;
+  for (const component of validated.components) {
+    const serialized = Buffer.from(JSON.stringify(component), 'utf8');
+    if (serialized.length > MAX_INFLATED_COMPONENT_BYTES) {
+      throw new Error('Invalid Component Vault export payload');
+    }
+    totalInflatedBytes += serialized.length;
+    if (totalInflatedBytes > MAX_TOTAL_INFLATED_COMPONENT_BYTES) {
+      throw new Error('Export payload exceeds the cumulative size limit');
+    }
+    serializedComponents.push(serialized);
+  }
 
   const envelope: EmbeddedEnvelope = {
     format: FORMAT,
     version: VERSION,
     library: validated.library,
-    components: validated.components.map((component) => ({
+    components: serializedComponents.map((component) => ({
       encoding: 'gzip-base64',
-      data: gzipSync(Buffer.from(JSON.stringify(component), 'utf8')).toString('base64'),
+      data: gzipSync(component).toString('base64'),
     })),
   };
 
-  return standaloneDocument(escapeScriptJson(JSON.stringify(envelope)));
+  const document = standaloneDocument(escapeScriptJson(JSON.stringify(envelope)));
+  if (Buffer.byteLength(document, 'utf8') > MAX_SOURCE_BYTES) {
+    throw new Error('Export payload exceeds the standalone file size limit');
+  }
+  return document;
 };
 
 export const parseComponentVaultHtml = (source: string): ExportPayload | null => {
-  if (typeof source !== 'string' || source.length > MAX_SOURCE_CHARACTERS) return null;
+  if (typeof source !== 'string' || Buffer.byteLength(source, 'utf8') > MAX_SOURCE_BYTES) return null;
   const matches = [...source.matchAll(
     /<script\b(?=[^>]*\bid=["']component-vault-data["'])(?=[^>]*\btype=["']application\/json["'])[^>]*>([\s\S]*?)<\/script\s*>/gi,
   )];
@@ -59,14 +78,27 @@ export const parseComponentVaultHtml = (source: string): ExportPayload | null =>
   try {
     const envelope = JSON.parse(matches[0][1]) as unknown;
     if (!isEmbeddedEnvelope(envelope)) return null;
-    const components = envelope.components.map((entry) => {
+    const components: ExportComponent[] = [];
+    let totalInflatedBytes = 0;
+    for (const entry of envelope.components) {
       const compressed = Buffer.from(entry.data, 'base64');
       if (compressed.toString('base64') !== entry.data) throw new Error('Invalid Base64 payload');
-      const inflated = gunzipSync(compressed, { maxOutputLength: MAX_INFLATED_COMPONENT_BYTES });
+      if (compressed.length < 4) throw new Error('Invalid gzip payload');
+      const remainingBytes = MAX_TOTAL_INFLATED_COMPONENT_BYTES - totalInflatedBytes;
+      const declaredInflatedBytes = compressed.readUInt32LE(compressed.length - 4);
+      if (remainingBytes <= 0
+        || declaredInflatedBytes > MAX_INFLATED_COMPONENT_BYTES
+        || declaredInflatedBytes > remainingBytes) {
+        throw new Error('Inflated component budget exceeded');
+      }
+      const inflated = gunzipSync(compressed, {
+        maxOutputLength: Math.min(MAX_INFLATED_COMPONENT_BYTES, remainingBytes),
+      });
+      totalInflatedBytes += inflated.length;
       const component = JSON.parse(inflated.toString('utf8')) as unknown;
       if (!isExportComponent(component)) throw new Error('Invalid component payload');
-      return component;
-    });
+      components.push(component);
+    }
     return validateExportPayload({
       format: FORMAT,
       version: VERSION,
@@ -171,13 +203,15 @@ const isExportComponent = (value: unknown): value is ExportComponent => isRecord
   && Array.isArray(value.tags)
   && value.tags.length <= 100
   && value.tags.every((tag) => isBoundedString(tag, 100))
-  && isBoundedString(value.html, 2_000_000)
-  && isBoundedString(value.css, 2_000_000)
-  && isBoundedString(value.javascript, 2_000_000)
+  && isBoundedString(value.html, MAX_CODE_BYTES)
+  && isBoundedString(value.css, MAX_CODE_BYTES)
+  && isBoundedString(value.javascript, MAX_CODE_BYTES)
   && isPreviewPolicy(value.previewPolicy);
 
 const isBoundedString = (value: unknown, maximum: number, allowEmpty = true): value is string =>
-  typeof value === 'string' && value.length <= maximum && (allowEmpty || value.trim().length > 0);
+  typeof value === 'string'
+  && Buffer.byteLength(value, 'utf8') <= maximum
+  && (allowEmpty || value.trim().length > 0);
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -227,7 +261,7 @@ const standaloneDocument = (embeddedJson: string): string => `<!doctype html>
     const base64FromBytes=value=>{let binary='';for(let index=0;index<value.length;index+=32768)binary+=String.fromCharCode(...value.subarray(index,index+32768));return btoa(binary)};
     const decompress=async value=>{const stream=new Blob([bytesFromBase64(value)]).stream().pipeThrough(new DecompressionStream('gzip'));return JSON.parse(await new Response(stream).text())};
     const compress=async value=>{const stream=new Blob([JSON.stringify(value)]).stream().pipeThrough(new CompressionStream('gzip'));return base64FromBytes(new Uint8Array(await new Response(stream).arrayBuffer()))};
-    const safeName=(name,extension)=>{let value=String(name||'').trim().replace(/\\.[^.]+$/,'').replace(/[<>:"\\/\\\\|?*\\u0000-\\u001f]/g,'-').replace(/\\s+/g,'-').replace(/-+/g,'-').replace(/^[. -]+|[. -]+$/g,'').slice(0,120)||'component';if(/^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(value))value+='-file';return value+extension};
+    const safeName=(name,extension)=>{let value=String(name||'').trim().replace(/[. ]+$/g,'');if(value.toLowerCase().endsWith(extension))value=value.slice(0,-extension.length);value=value.replace(/[<>:"\\/\\\\|?*\\u0000-\\u001f]/g,'-').replace(/\\s+/g,'-').replace(/-+/g,'-').replace(/^[. -]+|[. -]+$/g,'').slice(0,120)||'component';const dot=value.indexOf('.');const device=dot===-1?value:value.slice(0,dot);if(/^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(device))value=device+'-file'+value.slice(device.length);return value+extension};
     const copyText=async value=>{try{await navigator.clipboard.writeText(value)}catch{const area=document.createElement('textarea');area.value=value;document.body.append(area);area.select();document.execCommand('copy');area.remove()}status.textContent='Copied'};
     const fullCode=component=>'<!doctype html>\\n<html><head><meta charset="utf-8">\\n<style>'+component.css.replace(/<\\/style/gi,'<\\\\/style')+'</style>\\n</head><body>\\n'+component.html+'\\n<scr'+'ipt>'+component.javascript.replace(/<\\/script/gi,'<\\\\/script')+'<\\/scr'+'ipt>\\n</body></html>';
     const copyValue=(component,kind)=>kind==='html'?component.html:kind==='css'?component.css:kind==='javascript'?component.javascript:kind==='css-linked-html'?'<link rel="stylesheet" href="'+safeName(component.name,'.css')+'">\\n'+component.html:fullCode(component);
