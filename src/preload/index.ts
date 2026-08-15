@@ -1,10 +1,10 @@
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import {
   PREVIEW_REQUEST_BLOCKED_CHANNEL,
   type ComponentVaultApi,
   type PreviewBlockedRequest,
 } from '../shared/contracts';
-import { IPC_CHANNELS } from '../main/ipc/registerIpc';
+import { IPC_CHANNELS } from '../shared/ipcChannels';
 
 const componentVaultApi: ComponentVaultApi = {
   getAppVersion: () => ipcRenderer.invoke(IPC_CHANNELS.appGetVersion),
@@ -19,6 +19,7 @@ const componentVaultApi: ComponentVaultApi = {
   getAppSettings: () => ipcRenderer.invoke(IPC_CHANNELS.settingsGet),
   saveAppSettings: patch => ipcRenderer.invoke(IPC_CHANNELS.settingsUpdate, patch),
   importHtmlFiles: (paths, options) => ipcRenderer.invoke(IPC_CHANNELS.componentImportHtml, paths, options),
+  getPathForFile: file => webUtils.getPathForFile(file),
   configurePreviewNetwork: request => ipcRenderer.invoke(IPC_CHANNELS.previewConfigureNetwork, request),
   releasePreviewNetwork: previewId => ipcRenderer.invoke(IPC_CHANNELS.previewReleaseNetwork, previewId),
   onPreviewRequestBlocked: listener => {

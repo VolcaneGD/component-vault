@@ -1,7 +1,12 @@
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { defaultAppSettings, type AppSettings } from '../../src/shared/contracts';
+import {
+  defaultAppSettings,
+  type AppSettings,
+  type ComponentRecord,
+  type LibraryRecord,
+} from '../../src/shared/contracts';
 import App from '../../src/renderer/src/App';
 import { useAppStore } from '../../src/renderer/src/store/useAppStore';
 
@@ -10,8 +15,13 @@ const saveAppSettings = vi.fn().mockResolvedValue({ viewMode: 'gallery' });
 const resetAppStore = () => useAppStore.setState({
   settings: defaultAppSettings(),
   libraries: [],
+  components: [],
+  componentsLibraryId: null,
   selectedLibraryId: null,
   selectedComponentId: null,
+  selectedComponentIds: [],
+  searchQuery: '',
+  selectedTags: [],
   isHydrated: false,
   mutationVersion: 0,
 });
@@ -31,6 +41,112 @@ afterEach(() => {
 });
 
 describe('App shell navigation', () => {
+  it('serializes creation with a newer draft save so the latest code reaches the saved id', async () => {
+    let finishCreate!: (component: ComponentRecord) => void;
+    const createResult = new Promise<ComponentRecord>((resolve) => { finishCreate = resolve; });
+    const saveComponent = vi.fn()
+      .mockReturnValueOnce(createResult)
+      .mockImplementationOnce(async (input) => ({
+        ...input,
+        id: input.id,
+        createdAt: '2026-08-15T00:00:00.000Z',
+        updatedAt: '2026-08-15T00:00:02.000Z',
+        deletedAt: null,
+      }));
+    Object.defineProperty(window, 'componentVault', {
+      configurable: true,
+      value: { saveComponent, saveAppSettings },
+    });
+    const draft = useAppStore.getState().beginCodeComponent('7aa4a429-da7d-4ea0-bf8e-4deca38e95aa');
+    const first = { ...draft, name: 'Live button', html: '<button>First</button>' };
+    useAppStore.getState().updateComponentDraft(first);
+    const firstSave = useAppStore.getState().saveComponent(first);
+    const latest = { ...first, html: '<button>Latest</button>' };
+    useAppStore.getState().updateComponentDraft(latest);
+    const latestSave = useAppStore.getState().saveComponent(latest);
+
+    finishCreate({
+      ...first,
+      id: 'a19979d8-cb60-4eb8-bc5f-c905ba14adf0',
+      updatedAt: '2026-08-15T00:00:01.000Z',
+    });
+    await Promise.all([firstSave, latestSave]);
+
+    expect(saveComponent).toHaveBeenCalledTimes(2);
+    expect(saveComponent).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      id: undefined,
+    }));
+    expect(saveComponent).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      id: 'a19979d8-cb60-4eb8-bc5f-c905ba14adf0',
+      html: '<button>Latest</button>',
+    }));
+    expect(useAppStore.getState().components[0]).toMatchObject({
+      id: 'a19979d8-cb60-4eb8-bc5f-c905ba14adf0',
+      html: '<button>Latest</button>',
+    });
+  });
+
+  it('opens code creation from the sidebar and starts an unsaved workbench draft', async () => {
+    const library: LibraryRecord = {
+      id: 'library-1',
+      name: 'Design system',
+      description: '',
+      createdAt: '2026-08-15T00:00:00.000Z',
+      updatedAt: '2026-08-15T00:00:00.000Z',
+    };
+    const saveComponent = vi.fn();
+    const deleteComponent = vi.fn();
+    Object.defineProperty(window, 'componentVault', {
+      configurable: true,
+      value: {
+        getAppSettings: async () => ({ ...defaultAppSettings(), lastLibraryId: library.id }),
+        listLibraries: async () => [library],
+        saveAppSettings,
+        saveComponent,
+        deleteComponent,
+      },
+    });
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: 'New component' }));
+    expect(await screen.findByRole('dialog', { name: 'Create a component' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Start coding' }));
+
+    expect(screen.queryByRole('dialog', { name: 'Create a component' })).not.toBeInTheDocument();
+    expect(useAppStore.getState().components).toEqual([
+      expect.objectContaining({
+        libraryId: library.id,
+        name: '',
+        html: '',
+        css: '',
+        javascript: '',
+        sourceType: 'manual',
+      }),
+    ]);
+    expect(useAppStore.getState().selectedComponentId).toMatch(/^draft:/);
+
+    const transient = useAppStore.getState().components[0];
+    await useAppStore.getState().saveComponent({
+      ...transient,
+      previewPolicy: { ...transient.previewPolicy, allowScripts: true },
+    });
+    expect(saveComponent).not.toHaveBeenCalled();
+
+    await useAppStore.getState().deleteComponent(transient.id);
+    expect(deleteComponent).not.toHaveBeenCalled();
+    expect(useAppStore.getState().components).toEqual([]);
+  });
+
+  it('opens file import from the sidebar footer', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: 'Import' }));
+
+    expect(await screen.findByRole('dialog', { name: 'Import HTML components' })).toBeInTheDocument();
+  });
+
   it('switches from Workbench to Gallery and persists the choice', async () => {
     const user = userEvent.setup();
     render(<App />);

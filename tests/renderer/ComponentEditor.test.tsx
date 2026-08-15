@@ -74,6 +74,50 @@ afterEach(() => {
 });
 
 describe('ComponentEditor', () => {
+  it('keeps an invalid new draft live without persisting it', async () => {
+    vi.useFakeTimers();
+    const onChange = vi.fn();
+    render(<ComponentEditor component={{
+      ...fixture,
+      id: 'draft:new',
+      name: '',
+      html: '',
+      css: '',
+      javascript: '',
+    }} onChange={onChange} isNew />);
+
+    fireEvent.change(screen.getByTestId('html-editor-fallback'), {
+      target: { value: '<button>Preview me</button>' },
+    });
+    await act(() => vi.advanceTimersByTimeAsync(500));
+
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ html: '<button>Preview me</button>' }));
+    expect(saveComponent).not.toHaveBeenCalled();
+    expect(screen.getByText('Name is required.')).toBeInTheDocument();
+  });
+
+  it('persists a new draft only after its name and code are both non-empty', async () => {
+    vi.useFakeTimers();
+    render(<ComponentEditor component={{
+      ...fixture,
+      id: 'draft:new',
+      name: '',
+      html: '',
+      css: '',
+      javascript: '',
+    }} isNew />);
+
+    fireEvent.change(screen.getByLabelText('Component name'), { target: { value: 'Preview button' } });
+    await act(() => vi.advanceTimersByTimeAsync(500));
+    expect(saveComponent).not.toHaveBeenCalled();
+    expect(screen.getByText('Add HTML, CSS, or JavaScript before saving.')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByTestId('html-editor-fallback'), { target: { value: '<button>Preview</button>' } });
+    await act(() => vi.advanceTimersByTimeAsync(500));
+
+    expect(saveComponent).toHaveBeenCalledOnce();
+  });
+
   it('keeps separate Monaco models while switching HTML, CSS, and JavaScript tabs', () => {
     render(<ComponentEditor component={fixture} />);
 

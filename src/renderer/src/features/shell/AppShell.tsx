@@ -1,8 +1,9 @@
-import { lazy, Suspense, useEffect, type ComponentType, type LazyExoticComponent } from 'react';
+import { lazy, Suspense, useEffect, useState, type ComponentType, type LazyExoticComponent } from 'react';
 import type { ViewMode } from '../../../../shared/contracts';
 import { LibrarySidebar } from '../library/LibrarySidebar';
 import { useAppStore } from '../../store/useAppStore';
 import { ViewSwitcher } from './ViewSwitcher';
+import { ImportDialog } from '../import/ImportDialog';
 
 const WorkbenchPlaceholder = lazy(() => import('./WorkbenchView'));
 const GalleryPlaceholder = lazy(() => import('../library/GalleryView'));
@@ -15,7 +16,18 @@ const modeContent: Record<ViewMode, LazyExoticComponent<ComponentType>> = {
 };
 
 export const AppShell = () => {
-  const { settings, libraries, selectedLibraryId, hydrate, setSelectedLibraryId, setViewMode } = useAppStore();
+  const {
+    settings,
+    libraries,
+    selectedLibraryId,
+    hydrate,
+    setSelectedLibraryId,
+    setViewMode,
+    beginCodeComponent,
+    acceptSavedComponents,
+    acceptLibrary,
+  } = useAppStore();
+  const [importMode, setImportMode] = useState<'files' | 'code' | null>(null);
   const ModeContent = modeContent[settings.viewMode];
 
   useEffect(() => {
@@ -28,6 +40,8 @@ export const AppShell = () => {
         libraries={libraries}
         selectedLibraryId={selectedLibraryId}
         onSelectLibrary={setSelectedLibraryId}
+        onNewComponent={() => setImportMode('code')}
+        onImport={() => setImportMode('files')}
       />
       <main className="workspace" data-view={settings.viewMode}>
         <header className="workspace-header">
@@ -41,6 +55,20 @@ export const AppShell = () => {
           <ModeContent />
         </Suspense>
       </main>
+      {importMode && (
+        <ImportDialog
+          mode={importMode}
+          libraries={libraries}
+          selectedLibraryId={selectedLibraryId}
+          onClose={() => setImportMode(null)}
+          onSaved={acceptSavedComponents}
+          onLibraryCreated={acceptLibrary}
+          onStartCode={(libraryId) => {
+            beginCodeComponent(libraryId);
+            setImportMode(null);
+          }}
+        />
+      )}
     </div>
   );
 };

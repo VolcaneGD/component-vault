@@ -114,6 +114,8 @@ export const WorkbenchView = () => {
     >
       <ComponentEditor
         component={component}
+        isNew={component.id.startsWith('draft:')}
+        autoFocusHtml={component.id.startsWith('draft:')}
         onChange={updateComponentDraft}
         onSave={saveComponent}
         onDuplicate={duplicateComponent}

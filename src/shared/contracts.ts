@@ -120,6 +120,7 @@ export interface ComponentVaultApi {
   getAppSettings: () => Promise<AppSettings>;
   saveAppSettings: (patch: Partial<AppSettings>) => Promise<AppSettings>;
   importHtmlFiles: (paths: string[], options?: HtmlImportOptions) => Promise<ImportResult[]>;
+  getPathForFile: (file: File) => string;
   configurePreviewNetwork: (request: PreviewNetworkPolicyRequest) => Promise<void>;
   releasePreviewNetwork: (previewId: string) => Promise<void>;
   onPreviewRequestBlocked: (listener: (event: PreviewBlockedRequest) => void) => () => void;

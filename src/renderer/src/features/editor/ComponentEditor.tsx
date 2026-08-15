@@ -6,7 +6,7 @@ import type {
 } from '../../../../shared/contracts';
 import { EditorTabs, type EditorLanguage } from './EditorTabs';
 
-type SaveState = 'saved' | 'saving' | 'failed';
+type SaveState = 'draft' | 'saved' | 'saving' | 'failed';
 
 interface ComponentEditorProps {
   component: ComponentRecord;
@@ -14,9 +14,12 @@ interface ComponentEditorProps {
   onSave?: (component: ComponentSaveInput) => Promise<ComponentRecord>;
   onDuplicate?: (component: ComponentRecord) => Promise<unknown> | unknown;
   onDelete?: (componentId: string) => Promise<unknown> | unknown;
+  isNew?: boolean;
+  autoFocusHtml?: boolean;
 }
 
 const saveLabels: Record<SaveState, string> = {
+  draft: 'Not saved',
   saved: 'Saved',
   saving: 'Saving',
   failed: 'Save failed',
@@ -41,16 +44,24 @@ const uniqueTokens = (value: string): string[] => Array.from(new Set(
   value.split(/[,\n]/).map((token) => token.trim()).filter(Boolean),
 ));
 
+const hasPersistableCode = (component: ComponentRecord): boolean =>
+  Boolean(component.html.trim() || component.css.trim() || component.javascript.trim());
+
+const canPersistNewDraft = (component: ComponentRecord): boolean =>
+  Boolean(component.name.trim()) && hasPersistableCode(component);
+
 export const ComponentEditor = ({
   component,
   onChange,
   onSave,
   onDuplicate,
   onDelete,
+  isNew = false,
+  autoFocusHtml = false,
 }: ComponentEditorProps) => {
   const [draft, setDraft] = useState(component);
   const [tagText, setTagText] = useState(component.tags.join(', '));
-  const [saveState, setSaveState] = useState<SaveState>('saved');
+  const [saveState, setSaveState] = useState<SaveState>(isNew ? 'draft' : 'saved');
   const [isActionsOpen, setIsActionsOpen] = useState(false);
   const draftRef = useRef(component);
   const componentIdRef = useRef(component.id);
@@ -70,6 +81,7 @@ export const ComponentEditor = ({
     timerRef.current = null;
     dirtyRef.current = false;
     const snapshot = draftRef.current;
+    if (isNew && !canPersistNewDraft(snapshot)) return;
     const save = onSaveRef.current
       ?? ((input: ComponentSaveInput) => window.componentVault.saveComponent(input));
     void save(toSaveInput(snapshot)).catch(() => undefined);
@@ -95,7 +107,7 @@ export const ComponentEditor = ({
     timerRef.current = null;
     setDraft(component);
     setTagText(component.tags.join(', '));
-    setSaveState('saved');
+    setSaveState(isNew ? 'draft' : 'saved');
   }, [component]);
 
   useEffect(() => () => flushDirtySnapshot(), []);
@@ -105,6 +117,11 @@ export const ComponentEditor = ({
     if (timerRef.current !== null) window.clearTimeout(timerRef.current);
     timerRef.current = null;
     const snapshot = draftRef.current;
+    if (isNew && !canPersistNewDraft(snapshot)) {
+      dirtyRef.current = true;
+      setSaveState('draft');
+      return;
+    }
     const revision = revisionRef.current;
     setSaveState('saving');
 
@@ -126,7 +143,7 @@ export const ComponentEditor = ({
         setSaveState('failed');
       }
     }
-  }, []);
+  }, [isNew]);
 
   const scheduleAutosave = useCallback(() => {
     if (timerRef.current !== null) window.clearTimeout(timerRef.current);
@@ -139,10 +156,16 @@ export const ComponentEditor = ({
     revisionRef.current += 1;
     dirtyRef.current = true;
     setDraft(next);
-    setSaveState('saving');
     onChangeRef.current?.(next);
-    scheduleAutosave();
-  }, [scheduleAutosave]);
+    if (isNew && !canPersistNewDraft(next)) {
+      if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+      timerRef.current = null;
+      setSaveState('draft');
+    } else {
+      setSaveState('saving');
+      scheduleAutosave();
+    }
+  }, [isNew, scheduleAutosave]);
 
   const updatePolicy = useCallback((patch: Partial<PreviewPolicy>) => {
     updateDraft((current) => ({
@@ -221,6 +244,13 @@ export const ComponentEditor = ({
         </div>
       </header>
 
+      {isNew && (!draft.name.trim() || !hasPersistableCode(draft)) && (
+        <div className="component-editor__validation" role="status" aria-live="polite">
+          {!draft.name.trim() && <span>Name is required.</span>}
+          {!hasPersistableCode(draft) && <span>Add HTML, CSS, or JavaScript before saving.</span>}
+        </div>
+      )}
+
       <details className="component-editor__metadata">
         <summary>Details &amp; preview permissions</summary>
         <div className="metadata-grid">
@@ -281,6 +311,7 @@ export const ComponentEditor = ({
         javascript={draft.javascript}
         onChange={updateCode}
         onSave={() => void persistDraft(true)}
+        autoFocusHtml={autoFocusHtml}
       />
     </section>
   );

@@ -16,6 +16,7 @@ interface EditorTabsProps {
   javascript: string;
   onChange: (language: EditorLanguage, value: string) => void;
   onSave: () => void;
+  autoFocusHtml?: boolean;
 }
 
 const tabs: ReadonlyArray<{ language: EditorLanguage; label: string }> = [
@@ -53,6 +54,7 @@ export const EditorTabs = ({
   javascript,
   onChange,
   onSave,
+  autoFocusHtml = false,
 }: EditorTabsProps) => {
   const [activeLanguage, setActiveLanguage] = useState<EditorLanguage>('html');
   const editorRef = useRef<Parameters<OnMount>[0] | null>(null);
@@ -71,7 +73,8 @@ export const EditorTabs = ({
   const captureEditor = useCallback<OnMount>((editor, monaco) => {
     editorRef.current = editor;
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => onSave());
-  }, [onSave]);
+    if (autoFocusHtml && activeLanguage === 'html') editor.focus();
+  }, [activeLanguage, autoFocusHtml, onSave]);
 
   const formatDocument = useCallback(async () => {
     await editorRef.current?.getAction('editor.action.formatDocument')?.run();

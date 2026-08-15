@@ -3,6 +3,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { build } from 'esbuild';
 import { _electron as electron, type ElectronApplication } from 'playwright';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -183,7 +184,7 @@ describe('real Electron preview isolation', () => {
     await electronApplication.evaluate(async ({ BrowserWindow }, filePath) => {
       await BrowserWindow.getAllWindows()[0]?.loadFile(filePath);
     }, navigationParent);
-    await page.waitForLoadState('load');
+    await page.waitForURL(pathToFileURL(navigationParent).href);
     await page.evaluate(({ previewUrl, blockedUrl }) => new Promise<void>((resolveNavigation, reject) => {
       const previewId = 'electron-navigation-id';
       const iframe = document.createElement('iframe');

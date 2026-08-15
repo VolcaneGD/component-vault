@@ -5,9 +5,17 @@ interface LibrarySidebarProps {
   libraries: LibraryRecord[];
   selectedLibraryId: string | null;
   onSelectLibrary: (libraryId: string | null) => void;
+  onNewComponent?: () => void;
+  onImport?: () => void;
 }
 
-export const LibrarySidebar = ({ libraries, selectedLibraryId, onSelectLibrary }: LibrarySidebarProps) => {
+export const LibrarySidebar = ({
+  libraries,
+  selectedLibraryId,
+  onSelectLibrary,
+  onNewComponent,
+  onImport,
+}: LibrarySidebarProps) => {
   const { components, searchQuery, selectedTags, setSearchQuery, toggleTag, clearFilters } = useAppStore();
   const tags = Array.from(new Set(components.flatMap((component) => component.tags)))
     .sort((left, right) => left.localeCompare(right));
@@ -22,7 +30,7 @@ export const LibrarySidebar = ({ libraries, selectedLibraryId, onSelectLibrary }
       </div>
     </div>
 
-    <button type="button" className="new-component-button">New component</button>
+    <button type="button" className="new-component-button" onClick={onNewComponent}>New component</button>
 
     <label className="library-sidebar__search">
       <span className="sr-only">Search components</span>
@@ -84,7 +92,7 @@ export const LibrarySidebar = ({ libraries, selectedLibraryId, onSelectLibrary }
     </nav>
 
     <div className="library-sidebar__footer" aria-label="Library actions">
-      <button type="button">Import</button>
+      <button type="button" onClick={onImport}>Import</button>
       <button type="button">Export</button>
       <button type="button">Settings</button>
     </div>

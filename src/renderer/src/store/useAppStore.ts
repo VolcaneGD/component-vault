@@ -32,6 +32,9 @@ interface AppStore {
   loadComponents: (libraryId: string) => Promise<void>;
   reorderComponents: (libraryId: string, componentIds: string[]) => Promise<void>;
   updateComponentDraft: (component: ComponentRecord) => void;
+  beginCodeComponent: (libraryId: string) => ComponentRecord;
+  acceptSavedComponents: (components: ComponentRecord[]) => void;
+  acceptLibrary: (library: LibraryRecord) => void;
   saveComponent: (component: ComponentSaveInput) => Promise<ComponentRecord>;
   duplicateComponent: (component: ComponentRecord) => Promise<ComponentRecord>;
   deleteComponent: (componentId: string) => Promise<void>;
@@ -48,6 +51,8 @@ const deletingComponentIds = new Set<string>();
 const reorderOperationTails = new Map<string, Promise<void>>();
 const reorderLatestGenerations = new Map<string, number>();
 const reorderConfirmedOrders = new Map<string, string[]>();
+const draftOperationTails = new Map<string, Promise<ComponentRecord>>();
+const cancelledDraftIds = new Set<string>();
 
 const mutationGeneration = (componentId: string): number =>
   componentMutationGenerations.get(componentId) ?? 0;
@@ -97,6 +102,10 @@ const toSaveInput = (component: ComponentRecord): ComponentSaveInput => ({
   tags: component.tags,
   previewPolicy: component.previewPolicy,
 });
+
+const canPersistCodeDraft = (component: ComponentSaveInput): boolean =>
+  Boolean(component.name.trim())
+  && Boolean(component.html.trim() || component.css.trim() || component.javascript.trim());
 
 const mergeSavedEnvelopeWithLiveDraft = (
   saved: ComponentRecord,
@@ -245,7 +254,126 @@ export const useAppStore = create<AppStore>((set, get) => ({
       components: state.components.map((item) => item.id === component.id ? component : item),
     }));
   },
+  beginCodeComponent: (libraryId) => {
+    const now = new Date().toISOString();
+    const draft: ComponentRecord = {
+      id: `draft:${crypto.randomUUID()}`,
+      libraryId,
+      name: '',
+      description: '',
+      category: '',
+      tags: [],
+      html: '',
+      css: '',
+      javascript: '',
+      sourceType: 'manual',
+      originalFileName: null,
+      previewPolicy: {
+        allowScripts: false,
+        allowForms: false,
+        allowPopups: false,
+        externalNetworkEnabled: false,
+        allowedOrigins: [],
+      },
+      createdAt: now,
+      updatedAt: now,
+      deletedAt: null,
+    };
+    set((state) => ({
+      components: state.componentsLibraryId === libraryId ? [...state.components, draft] : [draft],
+      componentsLibraryId: libraryId,
+      selectedLibraryId: libraryId,
+      selectedComponentId: draft.id,
+      selectedComponentIds: [],
+      settings: { ...state.settings, viewMode: 'workbench' },
+      mutationVersion: state.mutationVersion + 1,
+    }));
+    persist({ viewMode: 'workbench', lastLibraryId: libraryId, lastComponentId: null });
+    return draft;
+  },
+  acceptSavedComponents: (savedComponents) => {
+    if (savedComponents.length === 0) return;
+    const last = savedComponents.at(-1)!;
+    set((state) => {
+      if (state.componentsLibraryId !== null && state.componentsLibraryId !== last.libraryId) return state;
+      const savedIds = new Set(savedComponents.map((component) => component.id));
+      return {
+        components: [
+          ...state.components.filter((component) => !savedIds.has(component.id)),
+          ...savedComponents,
+        ],
+        componentsLibraryId: last.libraryId,
+        selectedLibraryId: last.libraryId,
+        selectedComponentId: last.id,
+        mutationVersion: state.mutationVersion + 1,
+      };
+    });
+    persist({ lastLibraryId: last.libraryId, lastComponentId: last.id });
+  },
+  acceptLibrary: (library) => {
+    set((state) => ({
+      libraries: state.libraries.some((item) => item.id === library.id)
+        ? state.libraries.map((item) => item.id === library.id ? library : item)
+        : [...state.libraries, library],
+      selectedLibraryId: library.id,
+      mutationVersion: state.mutationVersion + 1,
+    }));
+    persist({ lastLibraryId: library.id });
+  },
   saveComponent: async (component) => {
+    if (component.id?.startsWith('draft:')) {
+      if (!canPersistCodeDraft(component)) {
+        const liveDraft = get().components.find((item) => item.id === component.id);
+        if (!liveDraft) throw new Error('Component save cancelled because the draft is closed');
+        const transient = { ...liveDraft, ...component, id: liveDraft.id };
+        set((state) => ({
+          components: state.components.map((item) => item.id === liveDraft.id ? transient : item),
+        }));
+        return transient;
+      }
+      const draftId = component.id;
+      set((state) => ({
+        components: state.components.map((item) => item.id === draftId
+          ? { ...item, ...component, id: draftId }
+          : item),
+      }));
+      const previous = draftOperationTails.get(draftId);
+      const operation = (previous ? previous.catch(() => undefined) : Promise.resolve(undefined))
+        .then(async (previousSaved): Promise<ComponentRecord> => {
+          const liveId = previousSaved?.id ?? draftId;
+          const live = get().components.find((item) => item.id === liveId);
+          if (!live) throw new Error('Component save cancelled because the draft is closed');
+          const saved = await window.componentVault.saveComponent({
+            ...toSaveInput(live),
+            id: previousSaved ? live.id : undefined,
+          });
+          if (cancelledDraftIds.has(draftId)) {
+            await window.componentVault.deleteComponent(saved.id);
+            cancelledDraftIds.delete(draftId);
+            return saved;
+          }
+          let result = saved;
+          set((state) => {
+            const latest = state.components.find((item) => item.id === liveId);
+            if (!latest) return state;
+            result = mergeSavedEnvelopeWithLiveDraft(saved, latest);
+            return {
+              components: state.components.map((item) => item.id === liveId ? result : item),
+              selectedComponentId: state.selectedComponentId === liveId ? saved.id : state.selectedComponentId,
+            };
+          });
+          persist({ lastComponentId: saved.id });
+          return result;
+        });
+      draftOperationTails.set(draftId, operation);
+      void operation.finally(() => {
+        if (draftOperationTails.get(draftId) === operation) {
+          draftOperationTails.delete(draftId);
+          cancelledDraftIds.delete(draftId);
+        }
+      }).catch(() => undefined);
+      return operation;
+    }
     if (!component.id) {
       const saved = await window.componentVault.saveComponent(component);
       set((state) => ({
@@ -301,6 +429,21 @@ export const useAppStore = create<AppStore>((set, get) => ({
     return get().saveComponent(input);
   },
   deleteComponent: async (componentId) => {
+    if (componentId.startsWith('draft:')) {
+      if (draftOperationTails.has(componentId)) cancelledDraftIds.add(componentId);
+      set((state) => {
+        const components = state.components.filter((component) => component.id !== componentId);
+        return {
+          components,
+          selectedComponentId: state.selectedComponentId === componentId
+            ? components[0]?.id ?? null
+            : state.selectedComponentId,
+          selectedComponentIds: state.selectedComponentIds.filter((id) => id !== componentId),
+        };
+      });
+      persist({ lastComponentId: null });
+      return;
+    }
     deletingComponentIds.add(componentId);
     componentMutationGenerations.set(componentId, mutationGeneration(componentId) + 1);
     try {

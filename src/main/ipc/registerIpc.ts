@@ -13,23 +13,9 @@ import { importHtmlFiles } from '../services/importHtml';
 import type { LibraryService } from '../services/library';
 import type { SettingsService } from '../services/settings';
 import type { PreviewSecurityController } from '../security/previewSecurity';
+import { IPC_CHANNELS } from '../../shared/ipcChannels';
 
-export const IPC_CHANNELS = {
-  appGetVersion: 'app:get-version',
-  libraryList: 'library:list',
-  librarySave: 'library:save',
-  libraryDelete: 'library:delete',
-  componentList: 'component:list',
-  componentSave: 'component:save',
-  componentDelete: 'component:delete',
-  componentReorder: 'component:reorder',
-  componentSearch: 'component:search',
-  settingsGet: 'settings:get',
-  settingsUpdate: 'settings:update',
-  componentImportHtml: 'component:import-html',
-  previewConfigureNetwork: 'preview:configure-network',
-  previewReleaseNetwork: 'preview:release-network',
-} as const;
+export { IPC_CHANNELS } from '../../shared/ipcChannels';
 
 interface IpcHandlerRegistrar {
   handle: (channel: string, listener: (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown) => void;

@@ -1,0 +1,16 @@
+export const IPC_CHANNELS = {
+  appGetVersion: 'app:get-version',
+  libraryList: 'library:list',
+  librarySave: 'library:save',
+  libraryDelete: 'library:delete',
+  componentList: 'component:list',
+  componentSave: 'component:save',
+  componentDelete: 'component:delete',
+  componentReorder: 'component:reorder',
+  componentSearch: 'component:search',
+  settingsGet: 'settings:get',
+  settingsUpdate: 'settings:update',
+  componentImportHtml: 'component:import-html',
+  previewConfigureNetwork: 'preview:configure-network',
+  previewReleaseNetwork: 'preview:release-network',
+} as const;

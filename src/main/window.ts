@@ -38,7 +38,7 @@ export const createApplicationWindow = ({
     minWidth: 960,
     minHeight: 640,
     webPreferences: {
-      preload: join(runtimeDirectory, '../preload/index.mjs'),
+      preload: join(runtimeDirectory, '../preload/index.cjs'),
       contextIsolation: true,
       sandbox: true,
       nodeIntegration: false,
