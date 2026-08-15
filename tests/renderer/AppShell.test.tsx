@@ -114,16 +114,12 @@ describe('App shell navigation', () => {
 
   it('serializes creation with a newer draft save so the latest code reaches the saved id', async () => {
     let finishCreate!: (component: ComponentRecord) => void;
+    let finishUpdate!: (component: ComponentRecord) => void;
     const createResult = new Promise<ComponentRecord>((resolve) => { finishCreate = resolve; });
+    const updateResult = new Promise<ComponentRecord>((resolve) => { finishUpdate = resolve; });
     const saveComponent = vi.fn()
       .mockReturnValueOnce(createResult)
-      .mockImplementationOnce(async (input) => ({
-        ...input,
-        id: input.id,
-        createdAt: '2026-08-15T00:00:00.000Z',
-        updatedAt: '2026-08-15T00:00:02.000Z',
-        deletedAt: null,
-      }));
+      .mockReturnValueOnce(updateResult);
     Object.defineProperty(window, 'componentVault', {
       configurable: true,
       value: { saveComponent, saveAppSettings },
@@ -141,20 +137,9 @@ describe('App shell navigation', () => {
       id: 'a19979d8-cb60-4eb8-bc5f-c905ba14adf0',
       updatedAt: '2026-08-15T00:00:01.000Z',
     });
-    await Promise.all([firstSave, latestSave]);
+    await firstSave;
+    await waitFor(() => expect(saveComponent).toHaveBeenCalledTimes(2));
 
-    expect(saveComponent).toHaveBeenCalledTimes(2);
-    expect(saveComponent).toHaveBeenNthCalledWith(1, expect.objectContaining({
-      id: undefined,
-    }));
-    expect(saveComponent).toHaveBeenNthCalledWith(2, expect.objectContaining({
-      id: 'a19979d8-cb60-4eb8-bc5f-c905ba14adf0',
-      html: '<button>Latest</button>',
-    }));
-    expect(useAppStore.getState().components[0]).toMatchObject({
-      id: 'a19979d8-cb60-4eb8-bc5f-c905ba14adf0',
-      html: '<button>Latest</button>',
-    });
     expect(useAppStore.getState().draftOrigins).toEqual({
       'a19979d8-cb60-4eb8-bc5f-c905ba14adf0': draft.id,
     });
@@ -169,6 +154,27 @@ describe('App shell navigation', () => {
       'a19979d8-cb60-4eb8-bc5f-c905ba14adf0',
       draft.id,
     );
+    expect(useAppStore.getState().draftOrigins).toEqual({});
+
+    finishUpdate({
+      ...latest,
+      id: 'a19979d8-cb60-4eb8-bc5f-c905ba14adf0',
+      updatedAt: '2026-08-15T00:00:02.000Z',
+    });
+    await latestSave;
+
+    expect(saveComponent).toHaveBeenCalledTimes(2);
+    expect(saveComponent).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      id: undefined,
+    }));
+    expect(saveComponent).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      id: 'a19979d8-cb60-4eb8-bc5f-c905ba14adf0',
+      html: '<button>Latest</button>',
+    }));
+    expect(useAppStore.getState().components[0]).toMatchObject({
+      id: 'a19979d8-cb60-4eb8-bc5f-c905ba14adf0',
+      html: '<button>Latest</button>',
+    });
     expect(useAppStore.getState().draftOrigins).toEqual({});
   });
 

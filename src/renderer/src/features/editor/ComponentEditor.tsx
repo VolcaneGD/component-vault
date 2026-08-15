@@ -94,6 +94,9 @@ export const ComponentEditor = ({
   useEffect(() => {
     const incomingPolicy = JSON.stringify(component.previewPolicy);
     if (componentIdRef.current === component.id) {
+      if (draftOriginId !== undefined) {
+        onDraftRekeyed?.(component.id, draftOriginId);
+      }
       if (incomingPolicyRef.current === incomingPolicy) return;
       incomingPolicyRef.current = incomingPolicy;
       const merged = { ...draftRef.current, previewPolicy: component.previewPolicy };

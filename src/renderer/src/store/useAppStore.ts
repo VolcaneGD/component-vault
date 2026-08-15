@@ -419,11 +419,11 @@ export const useAppStore = create<AppStore>((set, get) => ({
             const latest = state.components.find((item) => item.id === liveId);
             if (!latest) return state;
             result = mergeSavedEnvelopeWithLiveDraft(saved, latest);
-            const isSelectedRekey = state.selectedComponentId === liveId;
+            const isInitialSelectedRekey = liveId === draftId && state.selectedComponentId === liveId;
             return {
               components: state.components.map((item) => item.id === liveId ? result : item),
-              selectedComponentId: isSelectedRekey ? saved.id : state.selectedComponentId,
-              draftOrigins: isSelectedRekey
+              selectedComponentId: isInitialSelectedRekey ? saved.id : state.selectedComponentId,
+              draftOrigins: isInitialSelectedRekey
                 ? { ...state.draftOrigins, [saved.id]: draftId }
                 : state.draftOrigins,
             };

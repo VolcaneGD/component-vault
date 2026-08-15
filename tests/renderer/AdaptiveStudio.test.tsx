@@ -104,6 +104,24 @@ afterEach(() => {
 });
 
 describe('AdaptiveStudio', () => {
+  it('consumes a pending origin when Studio first mounts the saved UUID', async () => {
+    const saved = {
+      ...first,
+      id: 'component-created-before-studio',
+      name: 'Created before Studio',
+    };
+    useAppStore.setState({
+      components: [saved],
+      selectedComponentId: saved.id,
+      draftOrigins: { [saved.id]: 'draft:gallery' },
+    });
+
+    render(<AdaptiveStudio ratios={[0.24, 0.42, 0.34]} />);
+
+    await waitFor(() => expect(useAppStore.getState().draftOrigins).toEqual({}));
+    expect(screen.getByDisplayValue('Created before Studio')).toBeVisible();
+  });
+
   it('switches from a transient draft to an unrelated persisted component without overlaying draft fields', async () => {
     vi.useFakeTimers();
     saveComponent.mockImplementation(async (input) => ({

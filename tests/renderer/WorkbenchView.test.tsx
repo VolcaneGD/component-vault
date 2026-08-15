@@ -88,6 +88,33 @@ afterEach(() => {
 });
 
 describe('WorkbenchView', () => {
+  it('consumes a pending origin when mounting after creation completed without an editor', async () => {
+    const draft = {
+      ...component,
+      id: 'draft:gallery',
+      name: 'Gallery draft',
+    };
+    saveComponent.mockImplementation(async (input) => ({
+      ...component,
+      ...input,
+      id: 'component-created-in-gallery',
+      updatedAt: '2026-08-15T00:00:01.000Z',
+    } as ComponentRecord));
+    useAppStore.setState({
+      components: [draft],
+      selectedComponentId: draft.id,
+    });
+
+    await useAppStore.getState().saveComponent(draft);
+    expect(useAppStore.getState().draftOrigins).toEqual({
+      'component-created-in-gallery': draft.id,
+    });
+
+    render(<WorkbenchView />);
+    await waitFor(() => expect(useAppStore.getState().draftOrigins).toEqual({}));
+    expect(screen.getByDisplayValue('Gallery draft')).toBeVisible();
+  });
+
   it('consumes a draft origin after the mounted editor accepts its UUID rekey', async () => {
     vi.useFakeTimers();
     const draft = {
