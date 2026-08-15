@@ -33,7 +33,22 @@ const persist = (patch: Partial<AppSettings>) => {
   void window.componentVault?.saveAppSettings?.(patch).catch(() => undefined);
 };
 
-let componentSaveQueue: Promise<unknown> = Promise.resolve();
+const componentOperationTails = new Map<string, Promise<unknown>>();
+const componentMutationGenerations = new Map<string, number>();
+const deletingComponentIds = new Set<string>();
+
+const mutationGeneration = (componentId: string): number =>
+  componentMutationGenerations.get(componentId) ?? 0;
+
+const enqueueComponentOperation = <T>(componentId: string, operation: () => Promise<T>): Promise<T> => {
+  const previous = componentOperationTails.get(componentId) ?? Promise.resolve();
+  const current = previous.catch(() => undefined).then(operation);
+  componentOperationTails.set(componentId, current);
+  void current.finally(() => {
+    if (componentOperationTails.get(componentId) === current) componentOperationTails.delete(componentId);
+  }).catch(() => undefined);
+  return current;
+};
 
 const toSaveInput = (component: ComponentRecord): ComponentSaveInput => ({
   id: component.id,
@@ -48,6 +63,17 @@ const toSaveInput = (component: ComponentRecord): ComponentSaveInput => ({
   originalFileName: component.originalFileName,
   tags: component.tags,
   previewPolicy: component.previewPolicy,
+});
+
+const mergeSavedEnvelopeWithLiveDraft = (
+  saved: ComponentRecord,
+  live: ComponentRecord,
+): ComponentRecord => ({
+  ...live,
+  id: saved.id,
+  createdAt: saved.createdAt,
+  updatedAt: saved.updatedAt,
+  deletedAt: saved.deletedAt,
 });
 
 export const useAppStore = create<AppStore>((set, get) => ({
@@ -122,24 +148,43 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }));
   },
   saveComponent: async (component) => {
-    const operation = componentSaveQueue.catch(() => undefined).then(async () => {
-      const liveComponent = component.id
-        ? get().components.find((item) => item.id === component.id)
-        : undefined;
-      const saved = await window.componentVault.saveComponent(
-        liveComponent ? toSaveInput(liveComponent) : component,
-      );
+    if (!component.id) {
+      const saved = await window.componentVault.saveComponent(component);
       set((state) => ({
-        components: state.components.some((item) => item.id === saved.id)
-          ? state.components.map((item) => item.id === saved.id ? saved : item)
-          : [...state.components, saved],
+        components: [...state.components, saved],
         selectedComponentId: saved.id,
       }));
       persist({ lastComponentId: saved.id });
       return saved;
+    }
+
+    const componentId = component.id;
+    const requestedGeneration = mutationGeneration(componentId);
+    if (deletingComponentIds.has(componentId)) {
+      throw new Error('Component save cancelled because deletion is pending');
+    }
+    return enqueueComponentOperation(componentId, async () => {
+      if (deletingComponentIds.has(componentId)
+        || mutationGeneration(componentId) !== requestedGeneration) {
+        throw new Error('Component save cancelled because deletion is pending');
+      }
+      const liveBeforeSave = get().components.find((item) => item.id === componentId);
+      if (!liveBeforeSave) throw new Error('Component save cancelled because the component is closed');
+      const saved = await window.componentVault.saveComponent(toSaveInput(liveBeforeSave));
+      if (deletingComponentIds.has(componentId)
+        || mutationGeneration(componentId) !== requestedGeneration) return saved;
+
+      let result = saved;
+      set((state) => {
+        const liveAfterSave = state.components.find((item) => item.id === componentId);
+        if (!liveAfterSave) return state;
+        result = mergeSavedEnvelopeWithLiveDraft(saved, liveAfterSave);
+        return {
+          components: state.components.map((item) => item.id === componentId ? result : item),
+        };
+      });
+      return result;
     });
-    componentSaveQueue = operation;
-    return operation;
   },
   duplicateComponent: async (component) => {
     const input: ComponentSaveInput = {
@@ -158,16 +203,26 @@ export const useAppStore = create<AppStore>((set, get) => ({
     return get().saveComponent(input);
   },
   deleteComponent: async (componentId) => {
-    const deleted = await window.componentVault.deleteComponent(componentId);
-    if (!deleted) throw new Error('Component could not be deleted');
-    set((state) => {
-      const components = state.components.filter((component) => component.id !== componentId);
-      const selectedComponentId = state.selectedComponentId === componentId
-        ? components[0]?.id ?? null
-        : state.selectedComponentId;
-      persist({ lastComponentId: selectedComponentId });
-      return { components, selectedComponentId };
-    });
+    deletingComponentIds.add(componentId);
+    componentMutationGenerations.set(componentId, mutationGeneration(componentId) + 1);
+    try {
+      await enqueueComponentOperation(componentId, async () => {
+        const deleted = await window.componentVault.deleteComponent(componentId);
+        if (!deleted) throw new Error('Component could not be deleted');
+        set((state) => {
+          const components = state.components.filter((component) => component.id !== componentId);
+          const selectedComponentId = state.selectedComponentId === componentId
+            ? components[0]?.id ?? null
+            : state.selectedComponentId;
+          if (selectedComponentId !== state.selectedComponentId) {
+            persist({ lastComponentId: selectedComponentId });
+          }
+          return { components, selectedComponentId };
+        });
+      });
+    } finally {
+      deletingComponentIds.delete(componentId);
+    }
   },
   updateLayout: (patch) => {
     const normalizedPatch = patch.editorPreviewRatio === undefined

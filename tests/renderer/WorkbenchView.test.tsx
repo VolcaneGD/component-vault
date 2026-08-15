@@ -16,6 +16,8 @@ vi.mock('../../src/renderer/src/features/editor/MonacoEditorAdapter', () => ({
       onChange={(event) => onChange(event.target.value)}
     />
   ),
+  mountComponentModels: vi.fn(),
+  disposeComponentModels: vi.fn(),
 }));
 
 const component: ComponentRecord = {
@@ -44,17 +46,26 @@ const component: ComponentRecord = {
 
 const saveAppSettings = vi.fn().mockResolvedValue(undefined);
 const saveComponent = vi.fn(async (input) => ({ ...component, ...input } as ComponentRecord));
+const deleteComponent = vi.fn().mockResolvedValue(true);
+const componentB: ComponentRecord = {
+  ...component,
+  id: 'component-2',
+  name: 'Secondary card',
+  html: '<article>Secondary</article>',
+};
 
 beforeEach(() => {
   saveAppSettings.mockClear();
   saveComponent.mockClear();
   saveComponent.mockImplementation(async (input) => ({ ...component, ...input } as ComponentRecord));
+  deleteComponent.mockClear();
+  deleteComponent.mockResolvedValue(true);
   Object.defineProperty(window, 'componentVault', {
     configurable: true,
     value: {
       saveAppSettings,
       saveComponent,
-      deleteComponent: vi.fn().mockResolvedValue(true),
+      deleteComponent,
       configurePreviewNetwork: vi.fn().mockResolvedValue(undefined),
       releasePreviewNetwork: vi.fn().mockResolvedValue(undefined),
       onPreviewRequestBlocked: vi.fn(() => () => undefined),
@@ -122,5 +133,85 @@ describe('WorkbenchView', () => {
       html: '<article>Dirty card</article>',
       previewPolicy: policy,
     }));
+  });
+
+  it('preserves an edit made while a save is in flight and sends it in the queued save', async () => {
+    let finishFirstSave: ((saved: ComponentRecord) => void) | undefined;
+    saveComponent
+      .mockImplementationOnce(() => new Promise<ComponentRecord>((resolve) => { finishFirstSave = resolve; }))
+      .mockImplementationOnce(async (input) => ({ ...component, ...input } as ComponentRecord));
+    const firstSave = useAppStore.getState().saveComponent(component);
+    await waitFor(() => expect(saveComponent).toHaveBeenCalledOnce());
+
+    const edited = { ...component, html: '<article>Edited during save</article>' };
+    useAppStore.getState().updateComponentDraft(edited);
+    const queuedSave = useAppStore.getState().saveComponent(component);
+    finishFirstSave?.({ ...component, updatedAt: '2026-08-15T00:00:01.000Z' });
+    await firstSave;
+    await queuedSave;
+
+    expect(saveComponent).toHaveBeenNthCalledWith(2, expect.objectContaining({ html: edited.html }));
+    expect(useAppStore.getState().components[0].html).toBe(edited.html);
+  });
+
+  it('preserves an authoritative policy applied while a save is in flight', async () => {
+    let finishFirstSave: ((saved: ComponentRecord) => void) | undefined;
+    saveComponent
+      .mockImplementationOnce(() => new Promise<ComponentRecord>((resolve) => { finishFirstSave = resolve; }))
+      .mockImplementationOnce(async (input) => ({ ...component, ...input } as ComponentRecord));
+    const firstSave = useAppStore.getState().saveComponent(component);
+    await waitFor(() => expect(saveComponent).toHaveBeenCalledOnce());
+
+    const policy = {
+      ...component.previewPolicy,
+      externalNetworkEnabled: true,
+      allowedOrigins: ['https://assets.example.test'],
+    };
+    useAppStore.getState().updateComponentDraft({ ...component, previewPolicy: policy });
+    const queuedSave = useAppStore.getState().saveComponent(component);
+    finishFirstSave?.({ ...component, updatedAt: '2026-08-15T00:00:01.000Z' });
+    await firstSave;
+    await queuedSave;
+
+    expect(saveComponent).toHaveBeenNthCalledWith(2, expect.objectContaining({ previewPolicy: policy }));
+    expect(useAppStore.getState().components[0].previewPolicy).toEqual(policy);
+  });
+
+  it('cancels queued saves and deletes after an in-flight save without reinserting the component', async () => {
+    let finishFirstSave: ((saved: ComponentRecord) => void) | undefined;
+    saveComponent.mockImplementationOnce(
+      () => new Promise<ComponentRecord>((resolve) => { finishFirstSave = resolve; }),
+    );
+    const firstSave = useAppStore.getState().saveComponent(component);
+    await waitFor(() => expect(saveComponent).toHaveBeenCalledOnce());
+    const queuedSave = useAppStore.getState().saveComponent({ ...component, html: '<p>Queued</p>' })
+      .catch((error: unknown) => error);
+    const deletion = useAppStore.getState().deleteComponent(component.id);
+
+    finishFirstSave?.({ ...component, updatedAt: '2026-08-15T00:00:01.000Z' });
+    await firstSave;
+    await queuedSave;
+    await deletion;
+
+    expect(saveComponent).toHaveBeenCalledOnce();
+    expect(deleteComponent).toHaveBeenCalledOnce();
+    expect(useAppStore.getState().components).toEqual([]);
+  });
+
+  it('does not steal selection when component A finishes saving after the user selects B', async () => {
+    let finishSave: ((saved: ComponentRecord) => void) | undefined;
+    saveComponent.mockImplementationOnce(
+      () => new Promise<ComponentRecord>((resolve) => { finishSave = resolve; }),
+    );
+    useAppStore.setState({ components: [component, componentB], selectedComponentId: component.id });
+    const saving = useAppStore.getState().saveComponent(component);
+    await waitFor(() => expect(saveComponent).toHaveBeenCalledOnce());
+
+    useAppStore.getState().setSelectedComponentId(componentB.id);
+    finishSave?.({ ...component, updatedAt: '2026-08-15T00:00:01.000Z' });
+    await saving;
+
+    expect(useAppStore.getState().selectedComponentId).toBe(componentB.id);
+    expect(saveAppSettings).toHaveBeenLastCalledWith({ lastComponentId: componentB.id });
   });
 });

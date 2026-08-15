@@ -3,6 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ComponentRecord, ComponentSaveInput } from '../../src/shared/contracts';
 import { ComponentEditor } from '../../src/renderer/src/features/editor/ComponentEditor';
 
+const { disposeComponentModels } = vi.hoisted(() => ({
+  disposeComponentModels: vi.fn(),
+}));
+
 vi.mock('../../src/renderer/src/features/editor/MonacoEditorAdapter', () => ({
   MonacoEditor: ({ language, path, value, onChange }: {
     language: string;
@@ -17,6 +21,8 @@ vi.mock('../../src/renderer/src/features/editor/MonacoEditorAdapter', () => ({
       onChange={(event) => onChange(event.target.value)}
     />
   ),
+  mountComponentModels: vi.fn(),
+  disposeComponentModels,
 }));
 
 const fixture: ComponentRecord = {
@@ -46,6 +52,7 @@ const fixture: ComponentRecord = {
 let saveComponent: ReturnType<typeof vi.fn<(input: ComponentSaveInput) => Promise<ComponentRecord>>>;
 
 beforeEach(() => {
+  disposeComponentModels.mockClear();
   saveComponent = vi.fn(async (input) => ({
     ...fixture,
     ...input,
@@ -95,6 +102,20 @@ describe('ComponentEditor', () => {
 
     expect(screen.getByRole('tab', { name: 'CSS' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('tab', { name: 'CSS' })).toHaveFocus();
+  });
+
+  it('retains models across tabs and disposes a component model set when it closes', () => {
+    const { rerender, unmount } = render(<ComponentEditor component={fixture} />);
+
+    fireEvent.click(screen.getByRole('tab', { name: 'CSS' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'JavaScript' }));
+    expect(disposeComponentModels).not.toHaveBeenCalled();
+
+    rerender(<ComponentEditor component={{ ...fixture, id: 'component-2' }} />);
+    expect(disposeComponentModels).toHaveBeenCalledWith('component-1');
+
+    unmount();
+    expect(disposeComponentModels).toHaveBeenLastCalledWith('component-2');
   });
 
   it('debounces editor changes for 500 ms and reports saved state', async () => {

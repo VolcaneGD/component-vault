@@ -1,6 +1,11 @@
 import type { BeforeMount, OnMount } from '@monaco-editor/react';
-import { useCallback, useRef, useState } from 'react';
-import { MonacoEditor } from './MonacoEditorAdapter';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  disposeComponentModels,
+  MonacoEditor,
+  mountComponentModels,
+} from './MonacoEditorAdapter';
+import { componentModelPath } from './monacoModelLifecycle';
 
 export type EditorLanguage = 'html' | 'css' | 'javascript';
 
@@ -13,10 +18,10 @@ interface EditorTabsProps {
   onSave: () => void;
 }
 
-const tabs: ReadonlyArray<{ language: EditorLanguage; label: string; extension: string }> = [
-  { language: 'html', label: 'HTML', extension: 'html' },
-  { language: 'css', label: 'CSS', extension: 'css' },
-  { language: 'javascript', label: 'JavaScript', extension: 'js' },
+const tabs: ReadonlyArray<{ language: EditorLanguage; label: string }> = [
+  { language: 'html', label: 'HTML' },
+  { language: 'css', label: 'CSS' },
+  { language: 'javascript', label: 'JavaScript' },
 ];
 
 const componentVaultTheme: Parameters<BeforeMount>[0]['editor']['defineTheme'] extends (
@@ -53,6 +58,11 @@ export const EditorTabs = ({
   const editorRef = useRef<Parameters<OnMount>[0] | null>(null);
   const values = { html, css, javascript };
   const activeTab = tabs.find((tab) => tab.language === activeLanguage) ?? tabs[0];
+
+  useEffect(() => {
+    mountComponentModels(componentId);
+    return () => disposeComponentModels(componentId);
+  }, [componentId]);
 
   const configureMonaco = useCallback<BeforeMount>((monaco) => {
     monaco.editor.defineTheme('component-vault-dark', componentVaultTheme);
@@ -122,7 +132,7 @@ export const EditorTabs = ({
           beforeMount={configureMonaco}
           onMount={captureEditor}
           language={activeLanguage}
-          path={`component-vault://${componentId}/${activeLanguage}.${activeTab.extension}`}
+          path={componentModelPath(componentId, activeLanguage)}
           value={values[activeLanguage]}
           onChange={(value) => onChange(activeLanguage, value ?? '')}
           theme="component-vault-dark"
