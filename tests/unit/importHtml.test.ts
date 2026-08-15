@@ -20,7 +20,7 @@ describe('HTML import', () => {
     });
   });
 
-  it('detects undeclared Shift_JIS bytes that are also valid UTF-8 syntax', () => {
+  it('preserves valid undeclared UTF-8 bytes when they are also legal Shift_JIS bytes', () => {
     const bytes = Buffer.concat([
       Buffer.from('<!doctype html><html><body><p>'),
       Buffer.from([0xc2, 0xa9]),
@@ -28,8 +28,17 @@ describe('HTML import', () => {
     ]);
 
     expect(decodeHtml(bytes)).toEqual({
+      encoding: 'utf-8',
+      text: '<!doctype html><html><body><p>©</p></body></html>',
+    });
+  });
+
+  it('detects a realistic undeclared Shift_JIS fixture by confidence', () => {
+    const decoded = decodeHtml(readFileSync(fixturePath('shift-jis-undeclared.html')));
+
+    expect(decoded).toEqual({
       encoding: 'shift_jis',
-      text: '<!doctype html><html><body><p>ﾂｩ</p></body></html>',
+      text: '<!doctype html>\n<html>\n  <head><title>日本語カード</title></head>\n  <body><p>こんにちは世界</p></body>\n</html>\n',
     });
   });
 

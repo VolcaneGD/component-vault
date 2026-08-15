@@ -10,6 +10,7 @@ import type {
 } from '../../shared/contracts';
 
 const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
+const MATERIAL_CONFIDENCE_GAP = 20;
 
 export const decodeHtml = (bytes: Buffer): { text: string; encoding: 'utf-8' | 'shift_jis' } => {
   if (bytes.subarray(0, 3).equals(Buffer.from([0xef, 0xbb, 0xbf]))) {
@@ -92,49 +93,22 @@ const declaredHtmlEncoding = (bytes: Buffer): 'utf-8' | 'shift_jis' | undefined 
   return undefined;
 };
 
-const hasValidUtf8 = (bytes: Buffer): boolean => {
-  try {
-    new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-    return true;
-  } catch {
-    return false;
-  }
-};
-
 const detectFallbackEncoding = (bytes: Buffer): 'utf-8' | 'shift_jis' => {
   const matches = chardet.analyse(bytes);
   const utf8Confidence = detectorConfidence(matches, 'UTF-8');
   const shiftJisConfidence = detectorConfidence(matches, 'Shift_JIS');
 
-  if (shiftJisConfidence >= 50) return 'shift_jis';
-  if (utf8Confidence >= 90) return 'utf-8';
+  if (shiftJisConfidence >= utf8Confidence + MATERIAL_CONFIDENCE_GAP) return 'shift_jis';
 
-  // Some Shift_JIS pairs are also legal UTF-8. With no strong UTF-8 signal,
-  // retain a detector-recognized Japanese byte pair instead of corrupting it.
-  if (shiftJisConfidence > 0 && hasShiftJisEvidence(bytes)) return 'shift_jis';
-  if (utf8Confidence > shiftJisConfidence) return 'utf-8';
-  if (shiftJisConfidence > 0) return 'shift_jis';
-  return hasValidUtf8(bytes) ? 'utf-8' : 'shift_jis';
+  // Bytes such as C2 A9 are valid in both encodings, so they cannot be
+  // distinguished without metadata. Ties and low-confidence results use UTF-8.
+  return 'utf-8';
 };
 
 const detectorConfidence = (
   matches: Array<{ confidence: number; name: string }>,
   encoding: string,
 ): number => matches.find(match => match.name === encoding)?.confidence ?? 0;
-
-const hasShiftJisEvidence = (bytes: Buffer): boolean => {
-  for (let index = 0; index < bytes.length - 1; index += 1) {
-    const lead = bytes[index];
-    const trail = bytes[index + 1];
-    const doubleByte = ((lead >= 0x81 && lead <= 0x9f) || (lead >= 0xe0 && lead <= 0xfc)) &&
-      ((trail >= 0x40 && trail <= 0x7e) || (trail >= 0x80 && trail <= 0xfc));
-    const halfWidthKana = lead >= 0xa1 && lead <= 0xdf && trail >= 0xa1 && trail <= 0xdf;
-    if (doubleByte || halfWidthKana) {
-      return true;
-    }
-  }
-  return false;
-};
 
 const extractBody = (text: string): string => /<body\b[^>]*>([\s\S]*?)<\/body\s*>/i.exec(text)?.[1] ?? text;
 
