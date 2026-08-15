@@ -1,8 +1,5 @@
-const App = () => (
-  <main className="app-shell">
-    <h1>Component Vault</h1>
-    <p>Your component workbench is ready.</p>
-  </main>
-);
+import { AppShell } from './features/shell/AppShell';
+
+const App = () => <AppShell />;
 
 export default App;
