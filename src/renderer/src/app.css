@@ -1,0 +1,22 @@
+:root {
+  color: #e8edf7;
+  background: #111827;
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+body {
+  margin: 0;
+}
+
+.app-shell {
+  display: grid;
+  min-height: 100vh;
+  place-content: center;
+  gap: 0.5rem;
+  text-align: center;
+}
+
+.app-shell h1,
+.app-shell p {
+  margin: 0;
+}
