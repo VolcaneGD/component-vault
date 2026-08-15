@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { defaultAppSettings, type ComponentRecord, type LibraryRecord } from '../../src/shared/contracts';
@@ -70,6 +70,7 @@ const resetStore = () => useAppStore.setState({
   selectedLibraryId: library.id,
   selectedComponentId: first.id,
   selectedComponentIds: [],
+  draftOrigins: {},
   searchQuery: '',
   selectedTags: [],
   isHydrated: true,
@@ -99,9 +100,87 @@ afterEach(() => {
   cleanup();
   resetStore();
   setWidth(1024);
+  vi.useRealTimers();
 });
 
 describe('AdaptiveStudio', () => {
+  it('switches from a transient draft to an unrelated persisted component without overlaying draft fields', async () => {
+    vi.useFakeTimers();
+    saveComponent.mockImplementation(async (input) => ({
+      ...first,
+      ...input,
+      id: input.id ?? 'component-created-from-draft',
+    } as ComponentRecord));
+    const draft = {
+      ...makeComponent('draft:code-first', 'Transient draft'),
+      html: '<article>Draft</article>',
+    };
+    useAppStore.setState({
+      components: [draft, second],
+      selectedComponentId: draft.id,
+    });
+    render(<AdaptiveStudio ratios={[0.24, 0.42, 0.34]} />);
+    fireEvent.change(screen.getByRole('textbox', { name: 'html code' }), {
+      target: { value: '<article>Dirty draft</article>' },
+    });
+
+    fireEvent.click(screen.getByRole('option', { name: 'Banner' }));
+
+    expect(screen.getByDisplayValue('Banner')).toBeVisible();
+    expect(screen.getByRole('textbox', { name: 'html code' })).toHaveValue('<article>Banner</article>');
+    await act(() => vi.advanceTimersByTimeAsync(500));
+    expect(saveComponent).not.toHaveBeenCalledWith(expect.objectContaining({
+      id: second.id,
+      html: '<article>Dirty draft</article>',
+    }));
+  });
+
+  it('merges same-library imports without replacing a dirty edit, order, or selection', async () => {
+    vi.useFakeTimers();
+    const imported = {
+      ...makeComponent('component-3', 'Imported badge'),
+      sourceType: 'import' as const,
+      originalFileName: 'badge.html',
+    };
+    const listComponents = vi.fn().mockResolvedValue([first, second, imported]);
+    Object.defineProperty(window, 'componentVault', {
+      configurable: true,
+      value: {
+        saveAppSettings,
+        saveComponent,
+        listComponents,
+        deleteComponent: vi.fn().mockResolvedValue(true),
+        configurePreviewNetwork: vi.fn().mockResolvedValue(undefined),
+        releasePreviewNetwork: vi.fn().mockResolvedValue(undefined),
+        onPreviewRequestBlocked: vi.fn(() => () => undefined),
+      },
+    });
+    render(<AdaptiveStudio ratios={[0.24, 0.42, 0.34]} />);
+    fireEvent.change(screen.getByRole('textbox', { name: 'html code' }), {
+      target: { value: '<article>Dirty same-library edit</article>' },
+    });
+
+    await act(async () => useAppStore.getState().acceptSavedComponents([imported]));
+
+    expect(listComponents).not.toHaveBeenCalled();
+    expect(useAppStore.getState().selectedComponentId).toBe(first.id);
+    expect(useAppStore.getState().components.map((component) => component.id)).toEqual([
+      first.id,
+      second.id,
+      imported.id,
+    ]);
+    expect(screen.getByRole('textbox', { name: 'html code' })).toHaveValue(
+      '<article>Dirty same-library edit</article>',
+    );
+    expect(screen.getByRole('option', { name: 'Imported badge' })).toBeVisible();
+
+    await act(() => vi.advanceTimersByTimeAsync(500));
+    expect(saveComponent).toHaveBeenCalledWith(expect.objectContaining({
+      id: first.id,
+      html: '<article>Dirty same-library edit</article>',
+    }));
+  });
+
   it('normalizes and clamps unusable three-pane ratios', () => {
     render(<AdaptiveStudio ratios={[0.05, 0.9, 0.05]} />);
 

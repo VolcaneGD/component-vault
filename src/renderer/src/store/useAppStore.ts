@@ -16,6 +16,7 @@ interface AppStore {
   selectedLibraryId: string | null;
   selectedComponentId: string | null;
   selectedComponentIds: string[];
+  draftOrigins: Record<string, string>;
   searchQuery: string;
   selectedTags: string[];
   isHydrated: boolean;
@@ -126,6 +127,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   selectedLibraryId: null,
   selectedComponentId: null,
   selectedComponentIds: [],
+  draftOrigins: {},
   searchQuery: '',
   selectedTags: [],
   isHydrated: false,
@@ -294,6 +296,19 @@ export const useAppStore = create<AppStore>((set, get) => ({
   acceptSavedComponents: async (savedComponents) => {
     if (savedComponents.length === 0) return;
     const last = savedComponents.at(-1)!;
+    if (get().componentsLibraryId === last.libraryId) {
+      set((state) => {
+        const existingIds = new Set(state.components.map((component) => component.id));
+        return {
+          components: [
+            ...state.components,
+            ...savedComponents.filter((component) => !existingIds.has(component.id)),
+          ],
+          mutationVersion: state.mutationVersion + 1,
+        };
+      });
+      return;
+    }
     let loaded: ComponentRecord[] = [];
     try {
       loaded = await window.componentVault.listComponents(last.libraryId);
@@ -365,6 +380,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
             return {
               components: state.components.map((item) => item.id === liveId ? result : item),
               selectedComponentId: state.selectedComponentId === liveId ? saved.id : state.selectedComponentId,
+              draftOrigins: { ...state.draftOrigins, [saved.id]: draftId },
             };
           });
           persist({ lastComponentId: saved.id });

@@ -20,6 +20,7 @@ const resetAppStore = () => useAppStore.setState({
   selectedLibraryId: null,
   selectedComponentId: null,
   selectedComponentIds: [],
+  draftOrigins: {},
   searchQuery: '',
   selectedTags: [],
   isHydrated: false,
@@ -136,6 +137,9 @@ describe('App shell navigation', () => {
     expect(useAppStore.getState().components[0]).toMatchObject({
       id: 'a19979d8-cb60-4eb8-bc5f-c905ba14adf0',
       html: '<button>Latest</button>',
+    });
+    expect(useAppStore.getState().draftOrigins).toEqual({
+      'a19979d8-cb60-4eb8-bc5f-c905ba14adf0': draft.id,
     });
   });
 

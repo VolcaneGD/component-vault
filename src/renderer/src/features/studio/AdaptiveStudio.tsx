@@ -100,6 +100,7 @@ export const AdaptiveStudio = ({ ratios }: AdaptiveStudioProps) => {
     componentsLibraryId,
     selectedLibraryId,
     selectedComponentId,
+    draftOrigins,
     loadComponents,
     setSelectedComponentId,
     updateComponentDraft,
@@ -308,6 +309,7 @@ export const AdaptiveStudio = ({ ratios }: AdaptiveStudioProps) => {
         <section className="studio-pane studio-pane--editor" aria-label="Editor pane">
           <ComponentEditor
             component={component}
+            draftOriginId={draftOrigins[component.id]}
             onChange={updateComponentDraft}
             onSave={saveComponent}
             onDuplicate={duplicateComponent}

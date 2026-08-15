@@ -113,6 +113,7 @@ describe('ComponentEditor', () => {
       return (
         <ComponentEditor
           component={component}
+          draftOriginId={component.id.startsWith('draft:') ? undefined : transient.id}
           isNew={component.id.startsWith('draft:')}
           onSave={async (input) => {
             const saved = await persist(input);

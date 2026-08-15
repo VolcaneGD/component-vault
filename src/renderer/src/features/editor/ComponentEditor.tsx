@@ -16,6 +16,7 @@ interface ComponentEditorProps {
   onDelete?: (componentId: string) => Promise<unknown> | unknown;
   isNew?: boolean;
   autoFocusHtml?: boolean;
+  draftOriginId?: string;
 }
 
 const saveLabels: Record<SaveState, string> = {
@@ -58,6 +59,7 @@ export const ComponentEditor = ({
   onDelete,
   isNew = false,
   autoFocusHtml = false,
+  draftOriginId,
 }: ComponentEditorProps) => {
   const [draft, setDraft] = useState(component);
   const [tagText, setTagText] = useState(component.tags.join(', '));
@@ -97,8 +99,7 @@ export const ComponentEditor = ({
       setDraft(merged);
       return;
     }
-    const isDraftRekey = componentIdRef.current.startsWith('draft:')
-      && !component.id.startsWith('draft:');
+    const isDraftRekey = draftOriginId === componentIdRef.current;
     if (isDraftRekey) {
       componentIdRef.current = component.id;
       incomingPolicyRef.current = incomingPolicy;
@@ -126,7 +127,7 @@ export const ComponentEditor = ({
     setDraft(component);
     setTagText(component.tags.join(', '));
     setSaveState(isNew ? 'draft' : 'saved');
-  }, [component]);
+  }, [component, draftOriginId]);
 
   useEffect(() => () => flushDirtySnapshot(), []);
 
