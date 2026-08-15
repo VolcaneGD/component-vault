@@ -14,6 +14,7 @@ const componentVaultApi: ComponentVaultApi = {
   searchComponents: (libraryId, query) => ipcRenderer.invoke(IPC_CHANNELS.componentSearch, libraryId, query),
   getAppSettings: () => ipcRenderer.invoke(IPC_CHANNELS.settingsGet),
   saveAppSettings: patch => ipcRenderer.invoke(IPC_CHANNELS.settingsUpdate, patch),
+  importHtmlFiles: (paths, options) => ipcRenderer.invoke(IPC_CHANNELS.componentImportHtml, paths, options),
 };
 
 contextBridge.exposeInMainWorld('componentVault', componentVaultApi);

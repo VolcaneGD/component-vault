@@ -3,9 +3,11 @@ import {
   isPreviewPolicy,
   type AppSettings,
   type ComponentSaveInput,
+  type HtmlImportOptions,
   type LibrarySaveInput,
 } from '../../shared/contracts';
 import { isAppSettings } from '../../shared/validation';
+import { importHtmlFiles } from '../services/importHtml';
 import type { LibraryService } from '../services/library';
 import type { SettingsService } from '../services/settings';
 
@@ -21,6 +23,7 @@ export const IPC_CHANNELS = {
   componentSearch: 'component:search',
   settingsGet: 'settings:get',
   settingsUpdate: 'settings:update',
+  componentImportHtml: 'component:import-html',
 } as const;
 
 interface IpcHandlerRegistrar {
@@ -51,6 +54,8 @@ export const registerIpcHandlers = ({ ipcMain, appVersion, libraries, settings }
     libraries.searchComponents(validateId(libraryId, 'library id'), validateString(query, 'query', 500)));
   ipcMain.handle(IPC_CHANNELS.settingsGet, () => settings.getAppSettings());
   ipcMain.handle(IPC_CHANNELS.settingsUpdate, (_event, patch) => settings.saveAppSettings(validateSettingsPatch(patch)));
+  ipcMain.handle(IPC_CHANNELS.componentImportHtml, (_event, paths, options) =>
+    importHtmlFiles(validateImportPaths(paths), validateImportOptions(options)));
 };
 
 const validateLibrary = (value: unknown): LibrarySaveInput => {
@@ -98,6 +103,23 @@ const validateSettingsPatch = (value: unknown): Partial<AppSettings> => {
   if (patch.lastLibraryId !== undefined && patch.lastLibraryId !== null) validateId(patch.lastLibraryId, 'last library id');
   if (patch.lastComponentId !== undefined && patch.lastComponentId !== null) validateId(patch.lastComponentId, 'last component id');
   return patch as Partial<AppSettings>;
+};
+
+const validateImportPaths = (value: unknown): string[] => {
+  if (!Array.isArray(value) || value.length === 0 || value.length > 100) {
+    throw new Error('Invalid import paths');
+  }
+  return value.map(path => validateString(path, 'import path', 4_096, false));
+};
+
+const validateImportOptions = (value: unknown): HtmlImportOptions => {
+  if (value === undefined) return {};
+  const options = record(value, 'import options');
+  if (Object.keys(options).some(key => key !== 'allowLargeFiles') ||
+    (options.allowLargeFiles !== undefined && typeof options.allowLargeFiles !== 'boolean')) {
+    throw new Error('Invalid import options');
+  }
+  return options as HtmlImportOptions;
 };
 
 const defaultSettingsForValidation: AppSettings = {

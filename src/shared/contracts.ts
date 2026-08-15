@@ -55,6 +55,27 @@ export interface ComponentSaveInput {
   previewPolicy: PreviewPolicy;
 }
 
+export interface ComponentDraft {
+  name: string;
+  description: string;
+  category: string;
+  html: string;
+  css: string;
+  javascript: string;
+  sourceType: 'import';
+  originalFileName: string;
+  tags: string[];
+  previewPolicy: PreviewPolicy;
+}
+
+export type ImportResult =
+  | { ok: true; draft: ComponentDraft }
+  | { ok: false; fileName: string; message: string };
+
+export interface HtmlImportOptions {
+  allowLargeFiles?: boolean;
+}
+
 export interface AppSettings {
   viewMode: ViewMode;
   galleryColumns: 1 | 2 | 3 | 4;
@@ -85,6 +106,7 @@ export interface ComponentVaultApi {
   searchComponents: (libraryId: string, query: string) => Promise<ComponentRecord[]>;
   getAppSettings: () => Promise<AppSettings>;
   saveAppSettings: (patch: Partial<AppSettings>) => Promise<AppSettings>;
+  importHtmlFiles: (paths: string[], options?: HtmlImportOptions) => Promise<ImportResult[]>;
 }
 
 export const defaultAppSettings = (): AppSettings => ({
