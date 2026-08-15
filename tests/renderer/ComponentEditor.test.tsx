@@ -108,12 +108,14 @@ describe('ComponentEditor', () => {
       css: '',
       javascript: '',
     };
+    const onDraftRekeyed = vi.fn();
     const Harness = () => {
       const [component, setComponent] = useState(transient);
       return (
         <ComponentEditor
           component={component}
           draftOriginId={component.id.startsWith('draft:') ? undefined : transient.id}
+          onDraftRekeyed={onDraftRekeyed}
           isNew={component.id.startsWith('draft:')}
           onSave={async (input) => {
             const saved = await persist(input);
@@ -146,6 +148,11 @@ describe('ComponentEditor', () => {
 
     expect(screen.getByTestId('html-editor-fallback')).toHaveValue('<button>Latest</button>');
     expect(screen.getByText('Saving')).toBeInTheDocument();
+    expect(onDraftRekeyed).toHaveBeenCalledOnce();
+    expect(onDraftRekeyed).toHaveBeenCalledWith(
+      'a19979d8-cb60-4eb8-bc5f-c905ba14adf0',
+      transient.id,
+    );
     expect(persist).toHaveBeenCalledOnce();
 
     await act(() => vi.advanceTimersByTimeAsync(500));

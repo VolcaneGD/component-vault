@@ -17,6 +17,7 @@ interface ComponentEditorProps {
   isNew?: boolean;
   autoFocusHtml?: boolean;
   draftOriginId?: string;
+  onDraftRekeyed?: (componentId: string, draftOriginId: string) => void;
 }
 
 const saveLabels: Record<SaveState, string> = {
@@ -60,6 +61,7 @@ export const ComponentEditor = ({
   isNew = false,
   autoFocusHtml = false,
   draftOriginId,
+  onDraftRekeyed,
 }: ComponentEditorProps) => {
   const [draft, setDraft] = useState(component);
   const [tagText, setTagText] = useState(component.tags.join(', '));
@@ -99,8 +101,7 @@ export const ComponentEditor = ({
       setDraft(merged);
       return;
     }
-    const isDraftRekey = draftOriginId === componentIdRef.current;
-    if (isDraftRekey) {
+    if (draftOriginId !== undefined && draftOriginId === componentIdRef.current) {
       componentIdRef.current = component.id;
       incomingPolicyRef.current = incomingPolicy;
       const rekeyed = {
@@ -114,6 +115,7 @@ export const ComponentEditor = ({
       draftRef.current = rekeyed;
       setDraft(rekeyed);
       setSaveState(dirtyRef.current ? 'saving' : 'saved');
+      onDraftRekeyed?.(component.id, draftOriginId);
       return;
     }
     flushDirtySnapshot();
@@ -127,7 +129,7 @@ export const ComponentEditor = ({
     setDraft(component);
     setTagText(component.tags.join(', '));
     setSaveState(isNew ? 'draft' : 'saved');
-  }, [component, draftOriginId]);
+  }, [component, draftOriginId, onDraftRekeyed]);
 
   useEffect(() => () => flushDirtySnapshot(), []);
 

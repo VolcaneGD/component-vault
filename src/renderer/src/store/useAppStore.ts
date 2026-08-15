@@ -34,6 +34,7 @@ interface AppStore {
   reorderComponents: (libraryId: string, componentIds: string[]) => Promise<void>;
   updateComponentDraft: (component: ComponentRecord) => void;
   beginCodeComponent: (libraryId: string) => ComponentRecord;
+  consumeDraftOrigin: (componentId: string, draftOriginId: string) => void;
   acceptSavedComponents: (components: ComponentRecord[]) => Promise<void>;
   acceptLibrary: (library: LibraryRecord) => void;
   saveComponent: (component: ComponentSaveInput) => Promise<ComponentRecord>;
@@ -108,6 +109,20 @@ const canPersistCodeDraft = (component: ComponentSaveInput): boolean =>
   Boolean(component.name.trim())
   && Boolean(component.html.trim() || component.css.trim() || component.javascript.trim());
 
+const removeDraftOrigins = (
+  origins: Record<string, string>,
+  predicate: (componentId: string, draftOriginId: string) => boolean,
+): Record<string, string> => Object.fromEntries(
+  Object.entries(origins).filter(([componentId, draftOriginId]) => !predicate(componentId, draftOriginId)),
+);
+
+const retainSelectedDraftOrigin = (
+  origins: Record<string, string>,
+  selectedComponentId: string | null,
+): Record<string, string> => selectedComponentId && origins[selectedComponentId]
+  ? { [selectedComponentId]: origins[selectedComponentId] }
+  : {};
+
 const mergeSavedEnvelopeWithLiveDraft = (
   saved: ComponentRecord,
   live: ComponentRecord,
@@ -135,7 +150,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
   hydrate: async () => {
     const api = window.componentVault;
     if (!api) {
-      set({ isHydrated: true });
+      set((state) => ({
+        isHydrated: true,
+        draftOrigins: retainSelectedDraftOrigin(state.draftOrigins, state.selectedComponentId),
+      }));
       return;
     }
 
@@ -151,9 +169,14 @@ export const useAppStore = create<AppStore>((set, get) => ({
         libraries,
         selectedLibraryId: settings.lastLibraryId,
         selectedComponentId: settings.lastComponentId,
+        draftOrigins: {},
         isHydrated: true,
       }
-      : { libraries, isHydrated: true });
+      : {
+        libraries,
+        draftOrigins: retainSelectedDraftOrigin(state.draftOrigins, state.selectedComponentId),
+        isHydrated: true,
+      });
   },
   setViewMode: (viewMode) => {
     set((state) => ({
@@ -169,12 +192,17 @@ export const useAppStore = create<AppStore>((set, get) => ({
       selectedComponentIds: [],
       components: [],
       componentsLibraryId: null,
+      draftOrigins: {},
       mutationVersion: state.mutationVersion + 1,
     }));
     persist({ lastLibraryId: selectedLibraryId, lastComponentId: null });
   },
   setSelectedComponentId: (selectedComponentId) => {
-    set((state) => ({ selectedComponentId, mutationVersion: state.mutationVersion + 1 }));
+    set((state) => ({
+      selectedComponentId,
+      draftOrigins: retainSelectedDraftOrigin(state.draftOrigins, selectedComponentId),
+      mutationVersion: state.mutationVersion + 1,
+    }));
     persist({ lastComponentId: selectedComponentId });
   },
   setSearchQuery: (searchQuery) => set({ searchQuery }),
@@ -203,6 +231,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       return {
         components,
         componentsLibraryId: libraryId,
+        draftOrigins: {},
         selectedComponentId,
         selectedComponentIds: state.selectedComponentIds.filter((id) =>
           components.some((component) => component.id === id)),
@@ -288,10 +317,22 @@ export const useAppStore = create<AppStore>((set, get) => ({
       selectedComponentId: draft.id,
       selectedComponentIds: [],
       settings: { ...state.settings, viewMode: 'workbench' },
+      draftOrigins: {},
       mutationVersion: state.mutationVersion + 1,
     }));
     persist({ viewMode: 'workbench', lastLibraryId: libraryId, lastComponentId: null });
     return draft;
+  },
+  consumeDraftOrigin: (componentId, draftOriginId) => {
+    set((state) => {
+      if (state.draftOrigins[componentId] !== draftOriginId) return state;
+      return {
+        draftOrigins: removeDraftOrigins(
+          state.draftOrigins,
+          (savedId) => savedId === componentId,
+        ),
+      };
+    });
   },
   acceptSavedComponents: async (savedComponents) => {
     if (savedComponents.length === 0) return;
@@ -326,6 +367,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       selectedLibraryId: last.libraryId,
       selectedComponentId: last.id,
       selectedComponentIds: [],
+      draftOrigins: {},
       mutationVersion: state.mutationVersion + 1,
     }));
     persist({ lastLibraryId: last.libraryId, lastComponentId: last.id });
@@ -377,10 +419,13 @@ export const useAppStore = create<AppStore>((set, get) => ({
             const latest = state.components.find((item) => item.id === liveId);
             if (!latest) return state;
             result = mergeSavedEnvelopeWithLiveDraft(saved, latest);
+            const isSelectedRekey = state.selectedComponentId === liveId;
             return {
               components: state.components.map((item) => item.id === liveId ? result : item),
-              selectedComponentId: state.selectedComponentId === liveId ? saved.id : state.selectedComponentId,
-              draftOrigins: { ...state.draftOrigins, [saved.id]: draftId },
+              selectedComponentId: isSelectedRekey ? saved.id : state.selectedComponentId,
+              draftOrigins: isSelectedRekey
+                ? { ...state.draftOrigins, [saved.id]: draftId }
+                : state.draftOrigins,
             };
           });
           persist({ lastComponentId: saved.id });
@@ -460,6 +505,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
             ? components[0]?.id ?? null
             : state.selectedComponentId,
           selectedComponentIds: state.selectedComponentIds.filter((id) => id !== componentId),
+          draftOrigins: removeDraftOrigins(
+            state.draftOrigins,
+            (savedId, originId) => savedId === componentId || originId === componentId,
+          ),
         };
       });
       persist({ lastComponentId: null });
@@ -483,6 +532,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
             components,
             selectedComponentId,
             selectedComponentIds: state.selectedComponentIds.filter((id) => id !== componentId),
+            draftOrigins: removeDraftOrigins(
+              state.draftOrigins,
+              (savedId, originId) => savedId === componentId || originId === componentId,
+            ),
           };
         });
       });

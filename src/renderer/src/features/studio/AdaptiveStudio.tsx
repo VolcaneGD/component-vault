@@ -101,6 +101,7 @@ export const AdaptiveStudio = ({ ratios }: AdaptiveStudioProps) => {
     selectedLibraryId,
     selectedComponentId,
     draftOrigins,
+    consumeDraftOrigin,
     loadComponents,
     setSelectedComponentId,
     updateComponentDraft,
@@ -310,6 +311,8 @@ export const AdaptiveStudio = ({ ratios }: AdaptiveStudioProps) => {
           <ComponentEditor
             component={component}
             draftOriginId={draftOrigins[component.id]}
+            onDraftRekeyed={consumeDraftOrigin}
+            isNew={component.id.startsWith('draft:')}
             onChange={updateComponentDraft}
             onSave={saveComponent}
             onDuplicate={duplicateComponent}

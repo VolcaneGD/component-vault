@@ -15,6 +15,7 @@ export const WorkbenchView = () => {
     selectedLibraryId,
     selectedComponentId,
     draftOrigins,
+    consumeDraftOrigin,
     loadComponents,
     setSelectedComponentId,
     updateComponentDraft,
@@ -116,6 +117,7 @@ export const WorkbenchView = () => {
       <ComponentEditor
         component={component}
         draftOriginId={draftOrigins[component.id]}
+        onDraftRekeyed={consumeDraftOrigin}
         isNew={component.id.startsWith('draft:')}
         autoFocusHtml={component.id.startsWith('draft:')}
         onChange={updateComponentDraft}

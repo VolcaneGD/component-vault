@@ -118,6 +118,7 @@ describe('AdaptiveStudio', () => {
     useAppStore.setState({
       components: [draft, second],
       selectedComponentId: draft.id,
+      draftOrigins: { [second.id]: 'draft:unrelated' },
     });
     render(<AdaptiveStudio ratios={[0.24, 0.42, 0.34]} />);
     fireEvent.change(screen.getByRole('textbox', { name: 'html code' }), {
@@ -133,6 +134,9 @@ describe('AdaptiveStudio', () => {
       id: second.id,
       html: '<article>Dirty draft</article>',
     }));
+    expect(useAppStore.getState().draftOrigins).toEqual({
+      [second.id]: 'draft:unrelated',
+    });
   });
 
   it('merges same-library imports without replacing a dirty edit, order, or selection', async () => {

@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ComponentRecord } from '../../src/shared/contracts';
 import { WorkbenchView } from '../../src/renderer/src/features/shell/WorkbenchView';
@@ -73,16 +73,49 @@ beforeEach(() => {
   });
   useAppStore.setState({
     components: [component],
+    componentsLibraryId: component.libraryId,
+    selectedLibraryId: component.libraryId,
     selectedComponentId: component.id,
+    selectedComponentIds: [],
+    draftOrigins: {},
     settings: { ...useAppStore.getState().settings, editorPreviewRatio: 0.55 },
   });
 });
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
 });
 
 describe('WorkbenchView', () => {
+  it('consumes a draft origin after the mounted editor accepts its UUID rekey', async () => {
+    vi.useFakeTimers();
+    const draft = {
+      ...component,
+      id: 'draft:workbench',
+      name: 'Draft card',
+    };
+    saveComponent.mockImplementation(async (input) => ({
+      ...component,
+      ...input,
+      id: input.id ?? 'component-created',
+      updatedAt: '2026-08-15T00:00:01.000Z',
+    } as ComponentRecord));
+    useAppStore.setState({
+      components: [draft],
+      selectedComponentId: draft.id,
+    });
+    render(<WorkbenchView />);
+
+    fireEvent.change(screen.getByTestId('html-editor-fallback'), {
+      target: { value: '<article>Created card</article>' },
+    });
+    await act(() => vi.advanceTimersByTimeAsync(500));
+
+    expect(useAppStore.getState().components[0].id).toBe('component-created');
+    expect(useAppStore.getState().draftOrigins).toEqual({});
+  });
+
   it('places the live preview below the selected component editor', () => {
     render(<WorkbenchView />);
 

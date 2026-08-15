@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -9,6 +9,22 @@ import {
 } from '../../src/shared/contracts';
 import App from '../../src/renderer/src/App';
 import { useAppStore } from '../../src/renderer/src/store/useAppStore';
+
+vi.mock('../../src/renderer/src/features/editor/MonacoEditorAdapter', () => ({
+  MonacoEditor: ({ language, value, onChange }: {
+    language: string;
+    value: string;
+    onChange: (value: string) => void;
+  }) => (
+    <textarea
+      aria-label={`${language} code`}
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+    />
+  ),
+  mountComponentModels: vi.fn(),
+  disposeComponentModels: vi.fn(),
+}));
 
 const saveAppSettings = vi.fn().mockResolvedValue({ viewMode: 'gallery' });
 
@@ -39,6 +55,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   resetAppStore();
+  vi.useRealTimers();
 });
 
 describe('App shell navigation', () => {
@@ -141,6 +158,139 @@ describe('App shell navigation', () => {
     expect(useAppStore.getState().draftOrigins).toEqual({
       'a19979d8-cb60-4eb8-bc5f-c905ba14adf0': draft.id,
     });
+    useAppStore.getState().consumeDraftOrigin(
+      'a19979d8-cb60-4eb8-bc5f-c905ba14adf0',
+      'draft:unrelated',
+    );
+    expect(useAppStore.getState().draftOrigins).toEqual({
+      'a19979d8-cb60-4eb8-bc5f-c905ba14adf0': draft.id,
+    });
+    useAppStore.getState().consumeDraftOrigin(
+      'a19979d8-cb60-4eb8-bc5f-c905ba14adf0',
+      draft.id,
+    );
+    expect(useAppStore.getState().draftOrigins).toEqual({});
+  });
+
+  it('keeps code-first validation active after switching A to B to C', async () => {
+    const library: LibraryRecord = {
+      id: 'library-1',
+      name: 'Design system',
+      description: '',
+      createdAt: '2026-08-15T00:00:00.000Z',
+      updatedAt: '2026-08-15T00:00:00.000Z',
+    };
+    const saveComponent = vi.fn();
+    const draft = useAppStore.getState().beginCodeComponent(library.id);
+    Object.defineProperty(window, 'componentVault', {
+      configurable: true,
+      value: {
+        getAppSettings: async () => ({
+          ...defaultAppSettings(),
+          lastLibraryId: library.id,
+          lastComponentId: draft.id,
+        }),
+        listLibraries: async () => [library],
+        saveAppSettings,
+        saveComponent,
+        configurePreviewNetwork: vi.fn().mockResolvedValue(undefined),
+        releasePreviewNetwork: vi.fn().mockResolvedValue(undefined),
+        onPreviewRequestBlocked: vi.fn(() => () => undefined),
+      },
+    });
+    render(<App />);
+
+    fireEvent.click(screen.getByRole('button', { name: /B Gallery/i }));
+    await waitFor(() => expect(screen.getByRole('main')).toHaveAttribute('data-view', 'gallery'));
+    fireEvent.click(screen.getByRole('button', { name: /C Adaptive Studio/i }));
+    await screen.findByRole('region', { name: 'Component editor' });
+
+    expect(screen.getByText('Name is required.')).toBeInTheDocument();
+    expect(screen.getByText('Add HTML, CSS, or JavaScript before saving.')).toBeInTheDocument();
+
+    vi.useFakeTimers();
+    fireEvent.change(screen.getByLabelText('Component name'), { target: { value: 'Name only' } });
+    await act(() => vi.advanceTimersByTimeAsync(500));
+    expect(saveComponent).not.toHaveBeenCalled();
+    expect(screen.getByText('Add HTML, CSS, or JavaScript before saving.')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Component name'), { target: { value: '' } });
+    fireEvent.change(screen.getByRole('textbox', { name: 'html code' }), {
+      target: { value: '<button>Code only</button>' },
+    });
+    await act(() => vi.advanceTimersByTimeAsync(500));
+    expect(saveComponent).not.toHaveBeenCalled();
+    expect(screen.getByText('Name is required.')).toBeInTheDocument();
+  });
+
+  it('clears stale draft origins when library state is replaced', async () => {
+    const listComponents = vi.fn().mockResolvedValue([]);
+    Object.defineProperty(window, 'componentVault', {
+      configurable: true,
+      value: { listComponents, saveAppSettings },
+    });
+    useAppStore.setState({
+      componentsLibraryId: 'library-1',
+      selectedLibraryId: 'library-1',
+      draftOrigins: { 'component-old': 'draft:old' },
+    });
+
+    useAppStore.getState().setSelectedLibraryId('library-2');
+    expect(useAppStore.getState().draftOrigins).toEqual({});
+
+    useAppStore.setState({ draftOrigins: { 'component-old': 'draft:old' } });
+    await useAppStore.getState().loadComponents('library-2');
+    expect(useAppStore.getState().draftOrigins).toEqual({});
+  });
+
+  it('clears matching draft origins on deletion and safe hydration', async () => {
+    const component = {
+      id: 'component-old',
+      libraryId: 'library-1',
+      name: 'Old component',
+      description: '',
+      category: '',
+      tags: [],
+      html: '<p>Old</p>',
+      css: '',
+      javascript: '',
+      sourceType: 'manual' as const,
+      originalFileName: null,
+      previewPolicy: {
+        allowScripts: false,
+        allowForms: false,
+        allowPopups: false,
+        externalNetworkEnabled: false,
+        allowedOrigins: [],
+      },
+      createdAt: '2026-08-15T00:00:00.000Z',
+      updatedAt: '2026-08-15T00:00:00.000Z',
+      deletedAt: null,
+    };
+    Object.defineProperty(window, 'componentVault', {
+      configurable: true,
+      value: {
+        deleteComponent: vi.fn().mockResolvedValue(true),
+        getAppSettings: vi.fn().mockResolvedValue(defaultAppSettings()),
+        listLibraries: vi.fn().mockResolvedValue([]),
+        saveAppSettings,
+      },
+    });
+    useAppStore.setState({
+      components: [component],
+      componentsLibraryId: component.libraryId,
+      draftOrigins: { [component.id]: 'draft:old' },
+    });
+
+    await useAppStore.getState().deleteComponent(component.id);
+    expect(useAppStore.getState().draftOrigins).toEqual({});
+
+    useAppStore.setState({
+      draftOrigins: { 'component-stale': 'draft:stale' },
+      mutationVersion: 0,
+    });
+    await useAppStore.getState().hydrate();
+    expect(useAppStore.getState().draftOrigins).toEqual({});
   });
 
   it('opens code creation from the sidebar and starts an unsaved workbench draft', async () => {
