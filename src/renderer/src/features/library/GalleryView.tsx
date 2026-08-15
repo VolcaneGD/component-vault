@@ -21,6 +21,8 @@ interface GalleryViewProps {
 const VIRTUALIZATION_THRESHOLD = 100;
 const VIRTUAL_WINDOW_SIZE = 48;
 const ESTIMATED_CARD_HEIGHT = 290;
+const DESCRIPTION_SNIPPET_LENGTH = 96;
+const DESCRIPTION_MATCH_CONTEXT = 18;
 
 const escapeExpression = (value: string): string =>
   value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -32,6 +34,28 @@ const Highlight = ({ text, query }: { text: string; query: string }) => {
   return parts.map((part, index) => part.toLocaleLowerCase() === term.toLocaleLowerCase()
     ? <mark key={`${part}-${index}`}>{part}</mark>
     : <span key={`${part}-${index}`}>{part}</span>);
+};
+
+const descriptionSnippet = (text: string, query: string): { text: string; contextual: boolean } => {
+  const term = query.trim();
+  if (text.length <= DESCRIPTION_SNIPPET_LENGTH) return { text, contextual: false };
+
+  const matchIndex = term
+    ? text.toLocaleLowerCase().indexOf(term.toLocaleLowerCase())
+    : -1;
+  if (matchIndex < 0) {
+    return {
+      text: `${text.slice(0, DESCRIPTION_SNIPPET_LENGTH - 1).trimEnd()}…`,
+      contextual: false,
+    };
+  }
+
+  const start = Math.max(0, matchIndex - DESCRIPTION_MATCH_CONTEXT);
+  const end = Math.min(text.length, start + DESCRIPTION_SNIPPET_LENGTH);
+  return {
+    text: `${start > 0 ? '…' : ''}${text.slice(start, end).trim()}${end < text.length ? '…' : ''}`,
+    contextual: true,
+  };
 };
 
 const matchesFilters = (component: ComponentRecord, query: string, tags: string[]): boolean => {
@@ -106,8 +130,11 @@ const GalleryCard = ({
   onDragStart: (event: DragEvent<HTMLElement>) => void;
   onDrop: (event: DragEvent<HTMLElement>) => void;
   onPreviewPolicyChange: (policy: PreviewPolicy) => Promise<PreviewPolicy>;
-}) => (
-  <article
+}) => {
+  const description = descriptionSnippet(component.description, query);
+
+  return (
+    <article
     className="gallery-card"
     data-component-id={component.id}
     data-selected={selected || undefined}
@@ -138,15 +165,25 @@ const GalleryCard = ({
           <Highlight text={component.category} query={query} />
         </span>
       )}
-      {component.description && <p><Highlight text={component.description} query={query} /></p>}
+      {component.description && (
+        <p
+          className="gallery-card__description"
+          data-contextual-match={String(description.contextual)}
+          data-testid="gallery-description"
+          aria-label={`Description: ${description.text}`}
+        >
+          <Highlight text={description.text} query={query} />
+        </p>
+      )}
       <div className="gallery-card__tags" aria-label={`${component.name} tags`}>
         {component.tags.map((tag) => (
           <span key={tag}><Highlight text={tag} query={query} /></span>
         ))}
       </div>
     </div>
-  </article>
-);
+    </article>
+  );
+};
 
 export const GalleryView = ({ columns }: GalleryViewProps) => {
   const {
@@ -174,6 +211,7 @@ export const GalleryView = ({ columns }: GalleryViewProps) => {
   const [virtualStart, setVirtualStart] = useState(0);
   const [reorderError, setReorderError] = useState('');
   const draggedId = useRef<string | null>(null);
+  const reorderRequestGeneration = useRef(0);
   const activeLibraryId = selectedLibraryId ?? libraries[0]?.id ?? null;
 
   useEffect(() => {
@@ -221,11 +259,15 @@ export const GalleryView = ({ columns }: GalleryViewProps) => {
     if (sourceIndex < 0 || targetIndex < 0) return;
     ids.splice(sourceIndex, 1);
     ids.splice(targetIndex, 0, sourceId);
+    const requestGeneration = ++reorderRequestGeneration.current;
     setReorderError('');
     try {
       await reorderComponents(activeLibraryId, ids);
+      if (requestGeneration === reorderRequestGeneration.current) setReorderError('');
     } catch {
-      setReorderError('Could not reorder components. The previous order was restored.');
+      if (requestGeneration === reorderRequestGeneration.current) {
+        setReorderError('Could not reorder components. The previous order was restored.');
+      }
     }
   }, [activeLibraryId, components, isFiltered, reorderComponents]);
 

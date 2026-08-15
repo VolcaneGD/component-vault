@@ -153,6 +153,24 @@ describe('GalleryView', () => {
     expect(screen.getByText('workflow', { selector: 'mark' })).toBeVisible();
   });
 
+  it('renders a contextual visible snippet when a description match is near the clipped end', () => {
+    const longDescription = `Opening text that must not consume the card ${'filler '.repeat(40)}critical-tail marker`;
+    resetStore([
+      component('component-long-description', 'Audit Card', ['card'], {
+        description: longDescription,
+      }),
+    ]);
+    useAppStore.getState().setSearchQuery('critical-tail');
+
+    render(<GalleryView columns={2} />);
+
+    const description = screen.getByTestId('gallery-description');
+    expect(description).toHaveAttribute('data-contextual-match', 'true');
+    expect(description).toHaveTextContent(/….*critical-tail.*marker/);
+    expect(description).not.toHaveTextContent('Opening text');
+    expect(within(description).getByText('critical-tail', { selector: 'mark' })).toBeVisible();
+  });
+
   it('highlights visible matches in category and tag metadata', () => {
     resetStore([
       component('component-metadata', 'Revenue Summary', ['commerce'], {
@@ -249,6 +267,50 @@ describe('GalleryView', () => {
 
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Could not reorder components'));
     expect(useAppStore.getState().components.map((item) => item.id)).toEqual(records.map((item) => item.id));
+  });
+
+  it('does not leave an older drag failure visible after the latest drag succeeds', async () => {
+    let rejectFirst: ((error: Error) => void) | undefined;
+    reorderComponents
+      .mockImplementationOnce(() => new Promise<void>((_resolve, reject) => { rejectFirst = reject; }))
+      .mockResolvedValueOnce(undefined);
+    render(<GalleryView columns={3} />);
+
+    fireEvent.dragStart(screen.getByRole('article', { name: 'Primary Button' }), {
+      dataTransfer: { setData: vi.fn(), effectAllowed: 'move' },
+    });
+    fireEvent.drop(screen.getByRole('article', { name: 'Primary Card' }));
+    fireEvent.dragStart(screen.getByRole('article', { name: 'Secondary Button' }), {
+      dataTransfer: { setData: vi.fn(), effectAllowed: 'move' },
+    });
+    fireEvent.drop(screen.getByRole('article', { name: 'Primary Button' }));
+
+    rejectFirst?.(new Error('older reorder failed'));
+    await waitFor(() => expect(reorderComponents).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+    expect(useAppStore.getState().components.map((item) => item.id)).toEqual([
+      'component-3', 'component-1', 'component-2',
+    ]);
+  });
+
+  it('reports the latest drag failure even when an older drag succeeded', async () => {
+    let resolveFirst: (() => void) | undefined;
+    reorderComponents
+      .mockImplementationOnce(() => new Promise<void>((resolve) => { resolveFirst = resolve; }))
+      .mockRejectedValueOnce(new Error('latest reorder failed'));
+    render(<GalleryView columns={3} />);
+
+    fireEvent.dragStart(screen.getByRole('article', { name: 'Primary Button' }), {
+      dataTransfer: { setData: vi.fn(), effectAllowed: 'move' },
+    });
+    fireEvent.drop(screen.getByRole('article', { name: 'Primary Card' }));
+    fireEvent.dragStart(screen.getByRole('article', { name: 'Secondary Button' }), {
+      dataTransfer: { setData: vi.fn(), effectAllowed: 'move' },
+    });
+    fireEvent.drop(screen.getByRole('article', { name: 'Primary Button' }));
+
+    resolveFirst?.();
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Could not reorder components'));
   });
 
   it('serializes overlapping reorders so persistence cannot finish out of order', async () => {
