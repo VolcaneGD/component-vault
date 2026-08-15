@@ -1,31 +1,18 @@
 import { app, BrowserWindow, ipcMain } from 'electron';
-import { join } from 'node:path';
+import {
+  createApplicationWindow,
+  type ApplicationWindow,
+  type ApplicationWindowConstructor,
+} from './window';
 
-let mainWindow: BrowserWindow | null = null;
+let mainWindow: ApplicationWindow | null = null;
 
 const createWindow = (): void => {
-  mainWindow = new BrowserWindow({
-    width: 1440,
-    height: 960,
-    minWidth: 960,
-    minHeight: 640,
-    webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
-      contextIsolation: true,
-      sandbox: true,
-      nodeIntegration: false,
-      webSecurity: true,
-    },
+  mainWindow = createApplicationWindow({
+    BrowserWindow: BrowserWindow as unknown as ApplicationWindowConstructor,
+    runtimeDirectory: __dirname,
+    rendererUrl: process.env.ELECTRON_RENDERER_URL,
   });
-
-  mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-  mainWindow.webContents.on('will-navigate', event => event.preventDefault());
-
-  if (process.env.ELECTRON_RENDERER_URL) {
-    void mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL);
-  } else {
-    void mainWindow.loadFile(join(__dirname, '../renderer/index.html'));
-  }
 };
 
 app.whenReady().then(() => {

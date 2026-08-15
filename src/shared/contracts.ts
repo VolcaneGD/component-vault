@@ -25,6 +25,7 @@ export interface PreviewPolicy {
   allowScripts: boolean;
   allowForms: boolean;
   allowPopups: boolean;
+  allowedOrigins: string[];
 }
 
 export interface AppSettings {
@@ -59,6 +60,30 @@ export const defaultAppSettings = (): AppSettings => ({
 
 export const isViewMode = (value: unknown): value is ViewMode =>
   value === 'workbench' || value === 'gallery' || value === 'studio';
+
+const isHttpsOrigin = (value: unknown): value is string => {
+  if (typeof value !== 'string') return false;
+
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && url.origin === value;
+  } catch {
+    return false;
+  }
+};
+
+export const isPreviewPolicy = (value: unknown): value is PreviewPolicy => {
+  if (typeof value !== 'object' || value === null) return false;
+
+  const policy = value as Record<string, unknown>;
+  return (
+    typeof policy.allowScripts === 'boolean' &&
+    typeof policy.allowForms === 'boolean' &&
+    typeof policy.allowPopups === 'boolean' &&
+    Array.isArray(policy.allowedOrigins) &&
+    policy.allowedOrigins.every(isHttpsOrigin)
+  );
+};
 
 declare global {
   interface Window {
