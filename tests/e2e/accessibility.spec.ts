@@ -3,6 +3,25 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+const contrastRatio = (foreground: string, background: string): number => {
+  const luminance = (color: string) => {
+    const channels = color.match(/[\d.]+/g)?.slice(0, 3).map(Number);
+    if (!channels || channels.length !== 3) throw new Error(`Unsupported computed color: ${color}`);
+    const linear = channels.map((channel) => {
+      const normalized = channel / 255;
+      return normalized <= 0.04045
+        ? normalized / 12.92
+        : ((normalized + 0.055) / 1.055) ** 2.4;
+    });
+    return (0.2126 * linear[0]) + (0.7152 * linear[1]) + (0.0722 * linear[2]);
+  };
+  const foregroundLuminance = luminance(foreground);
+  const backgroundLuminance = luminance(background);
+  const light = Math.max(foregroundLuminance, backgroundLuminance);
+  const dark = Math.min(foregroundLuminance, backgroundLuminance);
+  return (light + 0.05) / (dark + 0.05);
+};
+
 test('keeps preview errors reachable in the workbench preview panel', async () => {
   const userDataDirectory = await mkdtemp(join(tmpdir(), 'component-vault-a11y-errors-'));
   const electronApp = await electron.launch({
@@ -109,6 +128,18 @@ test('traps dialog focus, restores the trigger, and honors reduced motion', asyn
     expect(reducedMotion.matches).toBe(true);
     expect(parseFloat(reducedMotion.animationDuration)).toBeLessThanOrEqual(0.00001);
     expect(parseFloat(reducedMotion.transitionDuration)).toBeLessThanOrEqual(0.00001);
+
+    const accentCombinations = await page.evaluate(() => [
+      document.querySelector<HTMLElement>('.new-component-button'),
+      document.querySelector<HTMLElement>('.view-switcher__button[aria-pressed="true"]'),
+    ].map((element) => {
+      if (!element) throw new Error('Expected accent control is missing');
+      const style = getComputedStyle(element);
+      return { foreground: style.color, background: style.backgroundColor };
+    }));
+    for (const combination of accentCombinations) {
+      expect(contrastRatio(combination.foreground, combination.background)).toBeGreaterThanOrEqual(4.5);
+    }
   } finally {
     await electronApp.close();
     await rm(userDataDirectory, { recursive: true, force: true });
