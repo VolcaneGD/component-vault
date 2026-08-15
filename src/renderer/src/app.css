@@ -734,6 +734,39 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 }
 
 .import-dialog__new-library { display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: var(--space-1); }
+
+.import-dialog__bundle-choice {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--accent) 38%, var(--border));
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+}
+
+.import-dialog__bundle-choice legend { padding: 0 0.4rem; color: var(--text); font-weight: 700; }
+.import-dialog__bundle-choice label { display: flex; align-items: center; gap: var(--space-1); color: var(--muted); }
+
+.export-dialog { width: min(56rem, 100%); }
+.export-dialog__body { grid-template-columns: minmax(15rem, 0.8fr) minmax(19rem, 1.2fr); align-items: start; }
+.export-dialog__selection,
+.export-dialog__copy {
+  min-width: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+}
+.export-dialog__selection ul { display: grid; gap: 0.35rem; max-height: 20rem; margin: var(--space-2) 0 0; padding: 0; overflow: auto; list-style: none; }
+.export-dialog__selection li { border-radius: var(--radius-sm); }
+.export-dialog__selection li.is-active { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.export-dialog__selection label { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 0.4rem; }
+.export-dialog__selection label > button { min-width: 0; overflow: hidden; border: 0; background: transparent; color: var(--text); text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+.export-dialog__copy h3 { margin: 0 0 var(--space-2); }
+.export-dialog__copy p { margin: var(--space-2) 0 0; color: var(--muted); font-size: 0.78rem; }
+.export-dialog__copy-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-1); }
+.export-dialog__status { grid-column: 1 / -1; margin: 0; color: var(--success); }
 .field-error { grid-column: 1 / -1; margin: 0; color: #ffabb8; font-size: 0.75rem; }
 
 .import-dropzone {
@@ -808,6 +841,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   .import-dialog { max-height: calc(100vh - 1rem); }
   .import-dialog__header, .import-dialog__footer, .import-dialog__body { padding: var(--space-3); }
   .import-dialog__library, .import-candidate { grid-template-columns: 1fr; }
+  .export-dialog__body, .export-dialog__copy-grid { grid-template-columns: 1fr; }
   .import-dialog__library h3, .field-error, .import-candidate__message { grid-column: 1; }
   .import-dialog__new-library { grid-template-columns: 1fr; }
   .code-first-intro { align-items: flex-start; flex-direction: column; }

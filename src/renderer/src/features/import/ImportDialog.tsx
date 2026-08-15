@@ -10,6 +10,7 @@ import {
 import type {
   ComponentDraft,
   ComponentRecord,
+  ExportPayload,
   ImportResult,
   LibraryRecord,
 } from '../../../../shared/contracts';
@@ -45,28 +46,48 @@ const resolveFilePath = (file: File): string => {
   return (file as File & { path?: string }).path ?? '';
 };
 
-const resultCandidate = (
+const resultCandidates = (
   result: ImportResult,
   file: File,
   path: string,
   index: number,
-): Candidate => result.ok
-  ? {
-    id: `${path}:${index}`,
-    path,
-    fileName: result.draft.originalFileName,
-    size: file.size,
-    status: 'ready',
-    draft: result.draft,
-  }
-  : {
+): Candidate[] => {
+  if (!result.ok) return [{
     id: `${path}:${index}`,
     path,
     fileName: result.fileName,
     size: file.size,
     status: 'failed',
     message: result.message,
-  };
+  }];
+  if ('bundle' in result) {
+    return result.bundle.components.map((component, componentIndex) => ({
+      id: `${path}:${index}:${componentIndex}`,
+      path,
+      fileName: `${result.fileName} / ${component.name}`,
+      size: file.size,
+      status: 'ready',
+      draft: {
+        ...component,
+        tags: [...component.tags],
+        previewPolicy: {
+          ...component.previewPolicy,
+          allowedOrigins: [...component.previewPolicy.allowedOrigins],
+        },
+        sourceType: 'import',
+        originalFileName: result.fileName,
+      },
+    }));
+  }
+  return [{
+    id: `${path}:${index}`,
+    path,
+    fileName: result.draft.originalFileName,
+    size: file.size,
+    status: 'ready',
+    draft: result.draft,
+  }];
+};
 
 const codeCharacters = (draft: ComponentDraft): number =>
   draft.html.length + draft.css.length + draft.javascript.length;
@@ -90,6 +111,8 @@ export const ImportDialog = ({
   const [isImporting, setIsImporting] = useState(false);
   const [newLibraryName, setNewLibraryName] = useState('');
   const [libraryError, setLibraryError] = useState('');
+  const [detectedBundle, setDetectedBundle] = useState<ExportPayload | null>(null);
+  const [bundleDestination, setBundleDestination] = useState<'merge' | 'new'>('merge');
   const dialogRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const initialFocusRef = useRef<HTMLButtonElement>(null);
@@ -123,18 +146,21 @@ export const ImportDialog = ({
       const results = valid.length > 0
         ? await window.componentVault.importHtmlFiles(valid.map((item) => item.path), undefined)
         : [];
-      const imported = results.map((result, index) => resultCandidate(
-        result,
-        valid[index].file,
-        valid[index].path,
-        index,
+      const imported = results.flatMap((result, index) => resultCandidates(
+        result, valid[index].file, valid[index].path, index,
       ));
+      const bundle = results.find((result): result is Extract<ImportResult, { bundle: ExportPayload }> =>
+        result.ok && 'bundle' in result);
+      if (bundle) {
+        setDetectedBundle(bundle.bundle);
+        setBundleDestination(availableLibraries.length > 0 ? 'merge' : 'new');
+      }
       setCandidates((current) => [...current, ...imported, ...unresolved]);
     } finally {
       setIsImporting(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
-  }, []);
+  }, [availableLibraries.length]);
 
   const retryLargeFile = useCallback(async (candidate: Candidate) => {
     setCandidates((current) => current.map((item) => item.id === candidate.id
@@ -144,21 +170,41 @@ export const ImportDialog = ({
       [candidate.path],
       { allowLargeFiles: true },
     );
-    setCandidates((current) => current.map((item) => item.id === candidate.id
-      ? resultCandidate(
-        result,
-        new File([], candidate.fileName),
-        candidate.path,
-        Number(candidate.id.split(':').at(-1) ?? 0),
-      )
-      : item));
+    if (result.ok && 'bundle' in result) {
+      setDetectedBundle(result.bundle);
+      setBundleDestination(availableLibraries.length > 0 ? 'merge' : 'new');
+    }
+    const replacements = resultCandidates(
+      result,
+      new File([], candidate.fileName),
+      candidate.path,
+      Number(candidate.id.split(':').at(-1) ?? 0),
+    );
+    setCandidates((current) => current.flatMap((item) => item.id === candidate.id ? replacements : [item]));
     setCandidates((current) => current.map((item) => item.path === candidate.path
       ? { ...item, size: candidate.size }
       : item));
-  }, []);
+  }, [availableLibraries.length]);
 
   const saveReady = useCallback(async () => {
-    if (!libraryId || readyCandidates.length === 0) return;
+    if ((!libraryId && bundleDestination !== 'new') || readyCandidates.length === 0) return;
+    let targetLibraryId = libraryId;
+    if (detectedBundle && bundleDestination === 'new') {
+      try {
+        const created = await window.componentVault.saveLibrary({
+          name: detectedBundle.library.name,
+          description: detectedBundle.library.description,
+        });
+        targetLibraryId = created.id;
+        setAvailableLibraries((current) => [...current, created]);
+        setLibraryId(created.id);
+        setBundleDestination('merge');
+        onLibraryCreated?.(created);
+      } catch {
+        setLibraryError('Could not create the exported library.');
+        return;
+      }
+    }
     const saved: ComponentRecord[] = [];
     for (const candidate of readyCandidates) {
       setCandidates((current) => current.map((item) => item.id === candidate.id
@@ -167,7 +213,7 @@ export const ImportDialog = ({
       try {
         const record = await window.componentVault.saveComponent({
           ...candidate.draft!,
-          libraryId,
+          libraryId: targetLibraryId,
         });
         saved.push(record);
         setCandidates((current) => current.map((item) => item.id === candidate.id
@@ -180,7 +226,7 @@ export const ImportDialog = ({
       }
     }
     if (saved.length > 0) await onSaved?.(saved);
-  }, [libraryId, onSaved, readyCandidates]);
+  }, [bundleDestination, detectedBundle, libraryId, onLibraryCreated, onSaved, readyCandidates]);
 
   const createLibrary = useCallback(async () => {
     const name = newLibraryName.trim();
@@ -268,6 +314,32 @@ export const ImportDialog = ({
             </div>
             {libraryError && <p className="field-error" role="alert">{libraryError}</p>}
           </section>
+
+          {mode === 'files' && detectedBundle && (
+            <fieldset className="import-dialog__bundle-choice">
+              <legend>Component Vault library detected</legend>
+              {availableLibraries.length > 0 && (
+                <label>
+                  <input
+                    type="radio"
+                    name="bundle-destination"
+                    checked={bundleDestination === 'merge'}
+                    onChange={() => setBundleDestination('merge')}
+                  />
+                  Merge into selected library
+                </label>
+              )}
+              <label>
+                <input
+                  type="radio"
+                  name="bundle-destination"
+                  checked={bundleDestination === 'new'}
+                  onChange={() => setBundleDestination('new')}
+                />
+                Create {detectedBundle.library.name} as a new library
+              </label>
+            </fieldset>
+          )}
 
           {mode === 'files' ? (
             <>
@@ -359,7 +431,7 @@ export const ImportDialog = ({
             <button
               type="button"
               className="button button--primary"
-              disabled={!libraryId || readyCandidates.length === 0}
+              disabled={(!libraryId && bundleDestination !== 'new') || readyCandidates.length === 0}
               onClick={() => void saveReady()}
             >
               Add {readyCandidates.length} {readyCandidates.length === 1 ? 'component' : 'components'}

@@ -11,6 +11,9 @@ export const IPC_CHANNELS = {
   settingsGet: 'settings:get',
   settingsUpdate: 'settings:update',
   componentImportHtml: 'component:import-html',
+  clipboardWriteText: 'clipboard:write-text',
+  exportSaveStandalone: 'export:save-standalone',
+  exportSaveCss: 'export:save-css',
   previewConfigureNetwork: 'preview:configure-network',
   previewReleaseNetwork: 'preview:release-network',
 } as const;

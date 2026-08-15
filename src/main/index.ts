@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, protocol, screen } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, protocol, screen } from 'electron';
 import { join } from 'node:path';
 import { openDatabase, type DatabaseContext } from './database/database';
 import { registerIpcHandlers } from './ipc/registerIpc';
@@ -48,6 +48,8 @@ app.whenReady().then(() => {
     libraries: createLibraryService(databaseContext),
     settings: createSettingsService(databaseContext),
     previewSecurity,
+    clipboard,
+    dialogs: dialog,
   });
   createWindow();
 

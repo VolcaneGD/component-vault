@@ -7,6 +7,7 @@ interface LibrarySidebarProps {
   onSelectLibrary: (libraryId: string | null) => void;
   onNewComponent?: () => void;
   onImport?: () => void;
+  onExport?: () => void;
 }
 
 export const LibrarySidebar = ({
@@ -15,6 +16,7 @@ export const LibrarySidebar = ({
   onSelectLibrary,
   onNewComponent,
   onImport,
+  onExport,
 }: LibrarySidebarProps) => {
   const { components, searchQuery, selectedTags, setSearchQuery, toggleTag, clearFilters } = useAppStore();
   const tags = Array.from(new Set(components.flatMap((component) => component.tags)))
@@ -93,7 +95,7 @@ export const LibrarySidebar = ({
 
     <div className="library-sidebar__footer" aria-label="Library actions">
       <button type="button" onClick={onImport}>Import</button>
-      <button type="button">Export</button>
+      <button type="button" disabled={!onExport} onClick={onExport}>Export</button>
       <button type="button">Settings</button>
     </div>
     </aside>

@@ -5,11 +5,17 @@ import {
   type AppSettings,
   type ComponentSaveInput,
   type HtmlImportOptions,
+  type ExportPayload,
   type LibrarySaveInput,
   type PreviewNetworkPolicyRequest,
 } from '../../shared/contracts';
 import { isAppSettings } from '../../shared/validation';
 import { importHtmlFiles } from '../services/importHtml';
+import {
+  createStandaloneHtml,
+  sanitizeDownloadFileName,
+  saveStandaloneHtmlAtomically,
+} from '../services/exportHtml';
 import type { LibraryService } from '../services/library';
 import type { SettingsService } from '../services/settings';
 import type { PreviewSecurityController } from '../security/previewSecurity';
@@ -27,6 +33,14 @@ interface RegisterIpcDependencies {
   libraries: LibraryService;
   settings: SettingsService;
   previewSecurity: PreviewSecurityController;
+  clipboard: { writeText: (text: string) => void };
+  dialogs: {
+    showSaveDialog: (options: {
+      title: string;
+      defaultPath: string;
+      filters: Array<{ name: string; extensions: string[] }>;
+    }) => Promise<{ canceled: boolean; filePath?: string }>;
+  };
 }
 
 export const registerIpcHandlers = ({
@@ -35,6 +49,8 @@ export const registerIpcHandlers = ({
   libraries,
   settings,
   previewSecurity,
+  clipboard,
+  dialogs,
 }: RegisterIpcDependencies): void => {
   ipcMain.handle(IPC_CHANNELS.appGetVersion, () => appVersion());
   ipcMain.handle(IPC_CHANNELS.libraryList, () => libraries.listLibraries());
@@ -54,6 +70,47 @@ export const registerIpcHandlers = ({
   ipcMain.handle(IPC_CHANNELS.settingsUpdate, (_event, patch) => settings.saveAppSettings(validateSettingsPatch(patch)));
   ipcMain.handle(IPC_CHANNELS.componentImportHtml, (_event, paths, options) =>
     importHtmlFiles(validateImportPaths(paths), validateImportOptions(options)));
+  ipcMain.handle(IPC_CHANNELS.clipboardWriteText, async (event, text) => {
+    assertMainFrame(event, 'Clipboard writes');
+    clipboard.writeText(validateString(text, 'clipboard text', 8_000_000));
+  });
+  ipcMain.handle(IPC_CHANNELS.exportSaveStandalone, async (event, payload) => {
+    assertMainFrame(event, 'Export');
+    const html = await createStandaloneHtml(payload as ExportPayload);
+    const exportPayload = payload as ExportPayload;
+    const saveDialog = await dialogs.showSaveDialog({
+      title: 'Save Component Vault standalone HTML',
+      defaultPath: sanitizeDownloadFileName(exportPayload.library.name, '.html'),
+      filters: [{ name: 'HTML document', extensions: ['html'] }],
+    });
+    if (saveDialog.canceled || !saveDialog.filePath) {
+      return { ok: false, cancelled: true, message: 'Save cancelled', html } as const;
+    }
+    const result = await saveStandaloneHtmlAtomically(saveDialog.filePath, html);
+    return result.ok
+      ? { ok: true, path: result.path } as const
+      : result;
+  });
+  ipcMain.handle(IPC_CHANNELS.exportSaveCss, async (event, suggestedFileName, css) => {
+    assertMainFrame(event, 'CSS export');
+    const fileName = sanitizeDownloadFileName(
+      validateString(suggestedFileName, 'CSS filename', 255, false),
+      '.css',
+    );
+    const content = validateString(css, 'component CSS', 2_000_000);
+    const saveDialog = await dialogs.showSaveDialog({
+      title: 'Save component CSS',
+      defaultPath: fileName,
+      filters: [{ name: 'CSS stylesheet', extensions: ['css'] }],
+    });
+    if (saveDialog.canceled || !saveDialog.filePath) {
+      return { ok: false, cancelled: true, message: 'Save cancelled' } as const;
+    }
+    const result = await saveStandaloneHtmlAtomically(saveDialog.filePath, content);
+    return result.ok
+      ? { ok: true, path: result.path } as const
+      : { ok: false, message: result.message } as const;
+  });
   ipcMain.handle(IPC_CHANNELS.previewConfigureNetwork, (event, request) => {
     if (event.senderFrame !== event.sender.mainFrame) {
       throw new Error('Preview network policy must come from the main renderer frame');
@@ -66,6 +123,12 @@ export const registerIpcHandlers = ({
     }
     previewSecurity.release(event.sender.id, validatePreviewId(previewId));
   });
+};
+
+const assertMainFrame = (event: IpcMainInvokeEvent, operation: string): void => {
+  if (event.senderFrame !== event.sender.mainFrame) {
+    throw new Error(`${operation} must come from the main renderer frame`);
+  }
 };
 
 const validatePreviewId = (value: unknown): string => {

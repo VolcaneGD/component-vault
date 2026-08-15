@@ -422,4 +422,42 @@ describe('App shell navigation', () => {
     await waitFor(() => expect(screen.getByRole('main')).toHaveAttribute('data-view', 'studio'));
     expect(useAppStore.getState().selectedComponentId).toBe('component-restored-from-settings');
   });
+
+  it('opens standalone export from the persistent sidebar for the active library', async () => {
+    const library: LibraryRecord = {
+      id: '7aa4a429-da7d-4ea0-bf8e-4deca38e95aa',
+      name: 'Export kit', description: '',
+      createdAt: '2026-08-15T00:00:00.000Z', updatedAt: '2026-08-15T00:00:00.000Z',
+    };
+    const component: ComponentRecord = {
+      id: 'a19979d8-cb60-4eb8-bc5f-c905ba14adf0', libraryId: library.id,
+      name: 'Export button', description: '', category: '', tags: [],
+      html: '<button>Export</button>', css: '', javascript: '', sourceType: 'manual', originalFileName: null,
+      previewPolicy: {
+        allowScripts: false, allowForms: false, allowPopups: false,
+        externalNetworkEnabled: false, allowedOrigins: [],
+      },
+      createdAt: '2026-08-15T00:00:00.000Z', updatedAt: '2026-08-15T00:00:00.000Z', deletedAt: null,
+    };
+    Object.defineProperty(window, 'componentVault', {
+      configurable: true,
+      value: {
+        getAppSettings: async () => ({ ...defaultAppSettings(), lastLibraryId: library.id }),
+        listLibraries: async () => [library],
+        listComponents: async () => [component],
+        saveAppSettings,
+        copyText: vi.fn(),
+        saveStandaloneHtml: vi.fn(),
+        saveCssFile: vi.fn(),
+      },
+    });
+    const user = userEvent.setup();
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Export' })).toBeEnabled());
+    await user.click(screen.getByRole('button', { name: 'Export' }));
+
+    expect(await screen.findByRole('dialog', { name: 'Export standalone HTML' })).toBeVisible();
+    expect(screen.getByRole('checkbox', { name: 'Include Export button' })).toBeChecked();
+  });
 });

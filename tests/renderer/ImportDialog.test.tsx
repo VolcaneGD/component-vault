@@ -185,4 +185,56 @@ describe('ImportDialog', () => {
       undefined,
     ));
   });
+
+  it('offers merge or new-library choices for a Component Vault bundle', async () => {
+    importHtmlFiles.mockResolvedValueOnce([{
+      ok: true,
+      fileName: 'exported-library.html',
+      bundle: {
+        format: 'component-vault',
+        version: 1,
+        library: { name: 'Imported kit', description: 'From export' },
+        components: [{
+          name: 'Imported card',
+          description: '',
+          category: 'Cards',
+          tags: [],
+          html: '<article>Card</article>',
+          css: '',
+          javascript: '',
+          previewPolicy: draft.previewPolicy,
+        }],
+      },
+    }]);
+    const saveLibrary = vi.fn().mockResolvedValue({ ...library, id: 'library-2', name: 'Imported kit' });
+    Object.defineProperty(window, 'componentVault', {
+      configurable: true,
+      value: {
+        importHtmlFiles,
+        saveComponent,
+        saveLibrary,
+        getPathForFile: (file: File) => `C:\\fixtures\\${file.name}`,
+      },
+    });
+    const user = userEvent.setup();
+    render(<ImportDialog mode="files" libraries={[library]} selectedLibraryId={library.id} />);
+
+    await user.upload(
+      screen.getByLabelText('HTML files'),
+      new File(['export'], 'exported-library.html', { type: 'text/html' }),
+    );
+
+    expect(await screen.findByText('Component Vault library detected')).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'Merge into selected library' })).toBeChecked();
+    expect(screen.getByRole('radio', { name: 'Create Imported kit as a new library' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('radio', { name: 'Create Imported kit as a new library' }));
+    await user.click(screen.getByRole('button', { name: 'Add 1 component' }));
+
+    expect(saveLibrary).toHaveBeenCalledWith({ name: 'Imported kit', description: 'From export' });
+    expect(saveComponent).toHaveBeenCalledWith(expect.objectContaining({
+      libraryId: 'library-2',
+      name: 'Imported card',
+    }));
+  });
 });

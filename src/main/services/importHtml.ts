@@ -8,6 +8,7 @@ import type {
   ImportResult,
   PreviewPolicy,
 } from '../../shared/contracts';
+import { parseComponentVaultHtml } from './exportHtml';
 
 const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
 const MATERIAL_CONFIDENCE_GAP = 20;
@@ -75,7 +76,11 @@ const importHtmlFile = (filePath: string, options: HtmlImportOptions): ImportRes
     if (stats.size > MAX_IMPORT_BYTES && !options.allowLargeFiles) {
       return { ok: false, fileName, message: 'File exceeds 5 MiB; confirm to import it' };
     }
-    return { ok: true, draft: normalizeHtmlImport(fileName, decodeHtml(readFileSync(filePath)).text) };
+    const text = decodeHtml(readFileSync(filePath)).text;
+    const bundle = parseComponentVaultHtml(text);
+    return bundle
+      ? { ok: true, fileName, bundle }
+      : { ok: true, draft: normalizeHtmlImport(fileName, text) };
   } catch {
     return { ok: false, fileName, message: 'Unable to read file' };
   }

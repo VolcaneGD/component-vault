@@ -4,6 +4,7 @@ import { LibrarySidebar } from '../library/LibrarySidebar';
 import { useAppStore } from '../../store/useAppStore';
 import { ViewSwitcher } from './ViewSwitcher';
 import { ImportDialog } from '../import/ImportDialog';
+import { ExportDialog } from '../export/ExportDialog';
 
 const WorkbenchPlaceholder = lazy(() => import('./WorkbenchView'));
 const GalleryPlaceholder = lazy(() => import('../library/GalleryView'));
@@ -19,7 +20,9 @@ export const AppShell = () => {
   const {
     settings,
     libraries,
+    components,
     selectedLibraryId,
+    selectedComponentIds,
     hydrate,
     setSelectedLibraryId,
     setViewMode,
@@ -28,7 +31,12 @@ export const AppShell = () => {
     acceptLibrary,
   } = useAppStore();
   const [importMode, setImportMode] = useState<'files' | 'code' | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
   const ModeContent = modeContent[settings.viewMode];
+  const exportLibrary = libraries.find((library) => library.id === selectedLibraryId) ?? libraries[0] ?? null;
+  const exportComponents = exportLibrary
+    ? components.filter((component) => component.libraryId === exportLibrary.id && !component.id.startsWith('draft:'))
+    : [];
 
   useEffect(() => {
     void hydrate();
@@ -42,6 +50,7 @@ export const AppShell = () => {
         onSelectLibrary={setSelectedLibraryId}
         onNewComponent={() => setImportMode('code')}
         onImport={() => setImportMode('files')}
+        onExport={exportLibrary && exportComponents.length > 0 ? () => setExportOpen(true) : undefined}
       />
       <main className="workspace" data-view={settings.viewMode}>
         <header className="workspace-header">
@@ -67,6 +76,14 @@ export const AppShell = () => {
             beginCodeComponent(libraryId);
             setImportMode(null);
           }}
+        />
+      )}
+      {exportOpen && exportLibrary && (
+        <ExportDialog
+          library={exportLibrary}
+          components={exportComponents}
+          initiallySelectedIds={selectedComponentIds}
+          onClose={() => setExportOpen(false)}
         />
       )}
     </div>

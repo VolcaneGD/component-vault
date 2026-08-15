@@ -81,8 +81,36 @@ export interface ComponentDraft {
   previewPolicy: PreviewPolicy;
 }
 
+export interface ExportComponent {
+  name: string;
+  description: string;
+  category: string;
+  tags: string[];
+  html: string;
+  css: string;
+  javascript: string;
+  previewPolicy: PreviewPolicy;
+}
+
+export interface ExportPayload {
+  format: 'component-vault';
+  version: 1;
+  library: {
+    name: string;
+    description: string;
+  };
+  components: ExportComponent[];
+}
+
+export type ExportCopyKind = 'html' | 'css' | 'javascript' | 'css-linked-html' | 'full-code';
+
+export type SaveFileResult =
+  | { ok: true; path: string; html?: string }
+  | { ok: false; cancelled?: boolean; message: string; html?: string };
+
 export type ImportResult =
   | { ok: true; draft: ComponentDraft }
+  | { ok: true; fileName: string; bundle: ExportPayload }
   | { ok: false; fileName: string; message: string };
 
 export interface HtmlImportOptions {
@@ -120,6 +148,9 @@ export interface ComponentVaultApi {
   getAppSettings: () => Promise<AppSettings>;
   saveAppSettings: (patch: Partial<AppSettings>) => Promise<AppSettings>;
   importHtmlFiles: (paths: string[], options?: HtmlImportOptions) => Promise<ImportResult[]>;
+  copyText: (text: string) => Promise<void>;
+  saveStandaloneHtml: (payload: ExportPayload) => Promise<SaveFileResult>;
+  saveCssFile: (suggestedFileName: string, css: string) => Promise<SaveFileResult>;
   getPathForFile: (file: File) => string;
   configurePreviewNetwork: (request: PreviewNetworkPolicyRequest) => Promise<void>;
   releasePreviewNetwork: (previewId: string) => Promise<void>;
