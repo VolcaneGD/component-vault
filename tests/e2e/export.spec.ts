@@ -206,7 +206,63 @@ test('rejects hostile existing bundles within bounded offline viewer errors', as
   }
 });
 
+test('handles missing and malformed embedded data without uncaught offline errors', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'component-vault-malformed-viewer-'));
+  const baseHtml = await createStandaloneHtml(payload);
+  const fixtures = [
+    {
+      name: 'missing-data-node.html',
+      source: baseHtml.replace(
+        /<script id="component-vault-data" type="application\/json">[^<]+<\/script>/,
+        '',
+      ),
+    },
+    { name: 'truncated-json.html', source: replaceDataPayload(baseHtml, '{"format":') },
+    { name: 'wrong-top-level.html', source: replaceDataPayload(baseHtml, '[]') },
+  ];
+  const browser = await chromium.launch({ channel: 'chrome' });
+
+  try {
+    const context = await browser.newContext();
+    await context.setOffline(true);
+    await context.addInitScript(() => {
+      const target = window as typeof window & { __unhandledRejections: string[] };
+      target.__unhandledRejections = [];
+      window.addEventListener('unhandledrejection', (event) => {
+        target.__unhandledRejections.push(String(event.reason));
+      });
+    });
+    for (const fixture of fixtures) {
+      const path = join(directory, fixture.name);
+      await writeFile(path, fixture.source, 'utf8');
+      const page = await context.newPage();
+      const pageErrors: Error[] = [];
+      page.on('pageerror', (error) => pageErrors.push(error));
+      await page.goto(pathToFileURL(path).href);
+      await expect(page.locator('#status')).toHaveText(
+        'This Component Vault file is damaged or unsupported.',
+      );
+      expect((await page.locator('#status').textContent())?.length).toBeLessThan(200);
+      await expect(page.locator('#items > li')).toHaveCount(0);
+      await expect(page.locator('#preview')).toHaveAttribute('srcdoc', '');
+      expect(pageErrors).toEqual([]);
+      expect(await page.evaluate(() => (
+        window as typeof window & { __unhandledRejections: string[] }
+      ).__unhandledRejections)).toEqual([]);
+      await page.close();
+    }
+  } finally {
+    await browser.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 const replaceEnvelope = (html: string, envelope: unknown): string => html.replace(
   /(<script id="component-vault-data" type="application\/json">)[^<]+(<\/script>)/,
   `$1${JSON.stringify(envelope)}$2`,
+);
+
+const replaceDataPayload = (html: string, data: string): string => html.replace(
+  /(<script id="component-vault-data" type="application\/json">)[^<]+(<\/script>)/,
+  (_match, opening: string, closing: string) => `${opening}${data}${closing}`,
 );
