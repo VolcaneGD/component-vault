@@ -4,7 +4,6 @@ import { openDatabase, type DatabaseContext } from './database/database';
 import { registerIpcHandlers } from './ipc/registerIpc';
 import { createLibraryService } from './services/library';
 import type { LibraryService } from './services/library';
-import type { RecoverySnapshot } from '../shared/contracts';
 import { createSettingsService } from './services/settings';
 import { createPreviewSecurityController } from './security/previewSecurity';
 import { installPreviewProtocol, registerPreviewScheme } from './security/previewProtocol';
@@ -23,7 +22,6 @@ let mainWindow: ApplicationWindow | null = null;
 let windowStateController: WindowStateController | null = null;
 let databaseContext: DatabaseContext | null = null;
 let libraryService: LibraryService | null = null;
-let recoverySnapshot: RecoverySnapshot | null = null;
 let deletionCleanupTimer: NodeJS.Timeout | null = null;
 const previewSecurity = createPreviewSecurityController();
 registerPreviewScheme(protocol);
@@ -48,7 +46,7 @@ app.whenReady().then(() => {
   installPreviewProtocol(protocol, join(__dirname, '../renderer/preview'));
   databaseContext = openDatabase(join(app.getPath('userData'), 'component-vault.sqlite'));
   libraryService = createLibraryService(databaseContext);
-  recoverySnapshot = libraryService.startSession();
+  libraryService.startSession();
   deletionCleanupTimer = setInterval(() => {
     libraryService?.purgeExpiredDeletedComponents();
   }, 8_000);
@@ -57,7 +55,7 @@ app.whenReady().then(() => {
     ipcMain,
     appVersion: () => app.getVersion(),
     electronVersion: () => process.versions.electron,
-    recoverySnapshot: () => recoverySnapshot,
+    recoverySnapshot: () => libraryService?.consumeRecoverySnapshot() ?? null,
     libraries: libraryService,
     settings: createSettingsService(databaseContext),
     previewSecurity,

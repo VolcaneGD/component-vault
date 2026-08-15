@@ -60,6 +60,35 @@ describe('LibraryService', () => {
       .toEqual({ count: 0 });
   });
 
+  it('rejects a stale direct save instead of resurrecting a soft-deleted component', () => {
+    const service = createLibraryService(openTestDatabase());
+    const library = service.saveLibrary({ name: 'No resurrection', description: '' });
+    const component = service.saveComponent(componentInput(library.id, 'Deleted'));
+    const staleSave = { ...componentInput(library.id, 'Stale edit'), id: component.id };
+    service.deleteComponent(component.id);
+
+    expect(() => service.saveComponent(staleSave)).toThrow('Component is deleted');
+    expect(service.getComponent(component.id)).toBeUndefined();
+  });
+
+  it('keeps a deletion tombstone after expiry so an in-flight save cannot recreate the id', () => {
+    let now = Date.parse('2026-08-15T00:00:00.000Z');
+    const database = openTestDatabase();
+    const service = createLibraryService(database, { now: () => new Date(now) });
+    const library = service.saveLibrary({ name: 'Expired tombstone', description: '' });
+    const component = service.saveComponent(componentInput(library.id, 'Deleted forever'));
+    const staleSave = { ...componentInput(library.id, 'Late in-flight edit'), id: component.id };
+    service.deleteComponent(component.id);
+    now += 8_001;
+    service.purgeExpiredDeletedComponents();
+
+    expect(database.db.prepare('SELECT id FROM components WHERE id = ?').get(component.id)).toBeUndefined();
+    expect(() => service.saveComponent(staleSave)).toThrow('Component is deleted');
+    expect(database.db.prepare(
+      'SELECT component_id FROM component_deletion_tombstones WHERE component_id = ?',
+    ).get(component.id)).toEqual({ component_id: component.id });
+  });
+
   it('stores one component with tags and preview policy atomically', () => {
     const service = createLibraryService(openTestDatabase());
     const library = service.saveLibrary({ name: 'UI Essentials', description: '' });

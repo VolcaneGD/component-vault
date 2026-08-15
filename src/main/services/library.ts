@@ -25,6 +25,7 @@ export interface LibraryService {
   reorderComponents: (libraryId: string, componentIds: string[]) => void;
   searchComponents: (libraryId: string, query: string) => ComponentRecord[];
   startSession: () => RecoverySnapshot | null;
+  consumeRecoverySnapshot: () => RecoverySnapshot | null;
   markCleanShutdown: () => void;
 }
 
@@ -57,6 +58,7 @@ export const createLibraryService = (
   { db }: DatabaseContext,
   { now = () => new Date() }: LibraryServiceOptions = {},
 ): LibraryService => {
+  let pendingRecoverySnapshot: RecoverySnapshot | null = null;
   const listLibraries = (): LibraryRecord[] => db.prepare(
     'SELECT * FROM libraries ORDER BY created_at ASC, id ASC',
   ).all().map(toLibrary);
@@ -93,9 +95,16 @@ export const createLibraryService = (
     if (!isPreviewPolicy(component.previewPolicy)) throw new Error('Invalid preview policy');
     const savedAt = now().toISOString();
     const id = component.id ?? randomUUID();
-    const existing = db.prepare('SELECT id FROM components WHERE id = ?').get(id);
+    const tombstone = db.prepare(
+      'SELECT component_id FROM component_deletion_tombstones WHERE component_id = ?',
+    ).get(id);
+    if (tombstone) throw new Error('Component is deleted');
+    const existing = db.prepare('SELECT id, deleted_at FROM components WHERE id = ?').get(id) as
+      | { id: string; deleted_at: string | null }
+      | undefined;
+    if (existing?.deleted_at) throw new Error('Component is deleted');
     if (existing) {
-      db.prepare(`UPDATE components SET library_id = ?, name = ?, description = ?, category = ?, html = ?, css = ?, javascript = ?, source_type = ?, original_file_name = ?, updated_at = ?, deleted_at = NULL WHERE id = ?`)
+      db.prepare(`UPDATE components SET library_id = ?, name = ?, description = ?, category = ?, html = ?, css = ?, javascript = ?, source_type = ?, original_file_name = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL`)
         .run(component.libraryId, component.name, component.description, component.category, component.html,
           component.css, component.javascript, component.sourceType, component.originalFileName, savedAt, id);
     } else {
@@ -136,27 +145,32 @@ export const createLibraryService = (
     return readComponent(db, db.prepare('SELECT * FROM components WHERE id = ?').get(id) as ComponentRow);
   });
 
-  const deleteComponent = (componentId: string): SoftDeleteToken | null => {
+  const deleteComponent = db.transaction((componentId: string): SoftDeleteToken | null => {
     const deletedAt = now().toISOString();
     const result = db.prepare(
       'UPDATE components SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL',
     ).run(deletedAt, componentId);
-    return result.changes > 0
-      ? {
-        componentId,
-        deletedAt,
-        expiresAt: new Date(Date.parse(deletedAt) + DELETE_UNDO_WINDOW_MS).toISOString(),
-      }
-      : null;
-  };
+    if (result.changes === 0) return null;
+    db.prepare(`INSERT INTO component_deletion_tombstones (component_id, deleted_at) VALUES (?, ?)
+      ON CONFLICT(component_id) DO UPDATE SET deleted_at = excluded.deleted_at`)
+      .run(componentId, deletedAt);
+    return {
+      componentId,
+      deletedAt,
+      expiresAt: new Date(Date.parse(deletedAt) + DELETE_UNDO_WINDOW_MS).toISOString(),
+    };
+  });
 
-  const restoreDeletedComponent = (token: SoftDeleteToken): ComponentRecord | undefined => {
+  const restoreDeletedComponent = db.transaction((token: SoftDeleteToken): ComponentRecord | undefined => {
     if (!isAuthenticDeleteToken(token) || now().getTime() >= Date.parse(token.expiresAt)) return undefined;
     const restored = db.prepare(
       'UPDATE components SET deleted_at = NULL WHERE id = ? AND deleted_at = ?',
     ).run(token.componentId, token.deletedAt);
-    return restored.changes > 0 ? getComponent(token.componentId) : undefined;
-  };
+    if (restored.changes === 0) return undefined;
+    db.prepare('DELETE FROM component_deletion_tombstones WHERE component_id = ? AND deleted_at = ?')
+      .run(token.componentId, token.deletedAt);
+    return getComponent(token.componentId);
+  });
 
   const finalizeDeletedComponent = (token: SoftDeleteToken): boolean => {
     if (!isAuthenticDeleteToken(token) || now().getTime() < Date.parse(token.expiresAt)) return false;
@@ -202,8 +216,15 @@ export const createLibraryService = (
       && getComponent(previous.lastCompleted.componentId)
       ? previous.lastCompleted
       : null;
-    writeRecoverySession(db, { active: true, lastCompleted: previous?.lastCompleted ?? null });
+    pendingRecoverySnapshot = candidate;
+    writeRecoverySession(db, { active: true, lastCompleted: null });
     return candidate;
+  };
+
+  const consumeRecoverySnapshot = (): RecoverySnapshot | null => {
+    const snapshot = pendingRecoverySnapshot;
+    pendingRecoverySnapshot = null;
+    return snapshot;
   };
 
   const markCleanShutdown = (): void => {
@@ -214,7 +235,7 @@ export const createLibraryService = (
   return {
     listLibraries, saveLibrary, deleteLibrary, listComponents, getComponent, saveComponent,
     deleteComponent, restoreDeletedComponent, finalizeDeletedComponent, purgeExpiredDeletedComponents,
-    reorderComponents, searchComponents, startSession, markCleanShutdown,
+    reorderComponents, searchComponents, startSession, consumeRecoverySnapshot, markCleanShutdown,
   };
 };
 

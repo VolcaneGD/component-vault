@@ -1,7 +1,7 @@
 import { copyFileSync, existsSync } from 'node:fs';
 import { dirname, basename, join } from 'node:path';
 import Database from 'better-sqlite3';
-import { SCHEMA_VERSION, schemaV1 } from './schema';
+import { SCHEMA_VERSION, schemaV1, schemaV2 } from './schema';
 
 export { SCHEMA_VERSION } from './schema';
 
@@ -49,6 +49,11 @@ const migrate = (db: Database.Database, backupBeforeMigration: () => string | nu
   db.transaction(() => {
     if (currentVersion < 1) {
       db.exec(schemaV1);
+    }
+    if (currentVersion < 2) {
+      db.exec(schemaV2);
+    }
+    if (currentVersion < SCHEMA_VERSION) {
       db.prepare('DELETE FROM schema_meta').run();
       db.prepare('INSERT INTO schema_meta (version) VALUES (?)').run(SCHEMA_VERSION);
     }

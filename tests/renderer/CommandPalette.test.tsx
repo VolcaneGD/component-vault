@@ -72,6 +72,19 @@ describe('CommandPalette', () => {
     expect(trigger).toHaveFocus();
   });
 
+  it('traps Tab and Shift+Tab on its only tabbable command input', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByRole('button', { name: 'Open command palette' }));
+    const input = screen.getByRole('combobox', { name: 'Search commands' });
+    expect(input).toHaveFocus();
+
+    await user.tab();
+    expect(input).toHaveFocus();
+    await user.tab({ shift: true });
+    expect(input).toHaveFocus();
+  });
+
   it('does not consume the Monaco Ctrl+K chord', async () => {
     const user = userEvent.setup();
     render(<App />);

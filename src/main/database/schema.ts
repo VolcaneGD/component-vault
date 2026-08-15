@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 export const schemaV1 = `
   CREATE TABLE IF NOT EXISTS schema_meta (
@@ -60,4 +60,14 @@ export const schemaV1 = `
     ON components(library_id, sort_order, created_at);
   CREATE INDEX IF NOT EXISTS components_by_name ON components(name);
   CREATE INDEX IF NOT EXISTS tags_by_name ON tags(name);
+`;
+
+export const schemaV2 = `
+  CREATE TABLE IF NOT EXISTS component_deletion_tombstones (
+    component_id TEXT PRIMARY KEY,
+    deleted_at TEXT NOT NULL
+  );
+
+  INSERT OR IGNORE INTO component_deletion_tombstones (component_id, deleted_at)
+    SELECT id, deleted_at FROM components WHERE deleted_at IS NOT NULL;
 `;

@@ -39,6 +39,7 @@ export const CommandPalette = ({ commands, onClose, returnFocus }: CommandPalett
   const [activeIndex, setActiveIndex] = useState(0);
   const [error, setError] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
+  const dialogRef = useRef<HTMLElement>(null);
   const listboxId = useId();
   const results = useMemo(
     () => commands.filter((command) => fuzzyCommandMatch(command, query)),
@@ -69,6 +70,7 @@ export const CommandPalette = ({ commands, onClose, returnFocus }: CommandPalett
       if (event.target === event.currentTarget) close();
     }}>
       <section
+        ref={dialogRef}
         className="command-palette"
         role="dialog"
         aria-modal="true"
@@ -77,6 +79,20 @@ export const CommandPalette = ({ commands, onClose, returnFocus }: CommandPalett
           if (event.key === 'Escape') {
             event.preventDefault();
             close();
+          } else if (event.key === 'Tab') {
+            const focusable = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>(
+              'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href], summary, [tabindex]:not([tabindex="-1"])',
+            ) ?? []).filter((element) => !element.hidden);
+            if (focusable.length === 0) return;
+            const first = focusable[0];
+            const last = focusable[focusable.length - 1];
+            if (first === last || (event.shiftKey && document.activeElement === first)) {
+              event.preventDefault();
+              last.focus();
+            } else if (!event.shiftKey && document.activeElement === last) {
+              event.preventDefault();
+              first.focus();
+            }
           } else if (event.key === 'ArrowDown') {
             event.preventDefault();
             setActiveIndex((index) => results.length ? (index + 1) % results.length : 0);

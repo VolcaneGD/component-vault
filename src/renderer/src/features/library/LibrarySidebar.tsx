@@ -8,7 +8,7 @@ interface LibrarySidebarProps {
   onNewComponent?: () => void;
   onImport?: () => void;
   onExport?: () => void;
-  onSettings?: () => void;
+  onSettings?: (origin: HTMLButtonElement) => void;
 }
 
 export const LibrarySidebar = ({
@@ -98,7 +98,7 @@ export const LibrarySidebar = ({
     <div className="library-sidebar__footer" aria-label="Library actions">
       <button type="button" onClick={onImport}>Import</button>
       <button type="button" disabled={!onExport} onClick={onExport}>Export</button>
-      <button type="button" onClick={onSettings}>Settings</button>
+      <button type="button" onClick={(event) => onSettings?.(event.currentTarget)}>Settings</button>
     </div>
     </aside>
   );

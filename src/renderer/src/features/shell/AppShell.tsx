@@ -63,6 +63,7 @@ export const AppShell = () => {
   const [exportOpen, setExportOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [aboutReturnFocus, setAboutReturnFocus] = useState<HTMLElement | null>(null);
   const [paletteReturnFocus, setPaletteReturnFocus] = useState<HTMLElement | null>(null);
   const paletteButtonRef = useRef<HTMLButtonElement>(null);
   const ModeContent = modeContent[settings.viewMode];
@@ -105,9 +106,12 @@ export const AppShell = () => {
       { id: 'save', label: 'Save current component', group: 'Component', shortcut: 'Ctrl+S', disabled: !selected, run: () => selected ? saveComponent(toSaveInput(selected)) : undefined },
       { id: 'import', label: 'Import HTML', group: 'File', run: () => setImportMode('files') },
       { id: 'export', label: 'Export library', group: 'File', disabled: !exportLibrary || exportComponents.length === 0, run: () => setExportOpen(true) },
-      { id: 'about', label: 'About Component Vault', group: 'Help', run: () => setAboutOpen(true) },
+      { id: 'about', label: 'About Component Vault', group: 'Help', run: () => {
+        setAboutReturnFocus(paletteReturnFocus ?? paletteButtonRef.current);
+        setAboutOpen(true);
+      } },
     ];
-  }, [components, selectedComponentId, selectedComponentIds, setViewMode, saveComponent, exportLibrary, exportComponents.length]);
+  }, [components, selectedComponentId, selectedComponentIds, setViewMode, saveComponent, exportLibrary, exportComponents.length, paletteReturnFocus]);
 
   return (
     <div className="app-shell">
@@ -118,7 +122,10 @@ export const AppShell = () => {
         onNewComponent={() => setImportMode('code')}
         onImport={() => setImportMode('files')}
         onExport={exportLibrary && exportComponents.length > 0 ? () => setExportOpen(true) : undefined}
-        onSettings={() => setAboutOpen(true)}
+        onSettings={(origin) => {
+          setAboutReturnFocus(origin);
+          setAboutOpen(true);
+        }}
       />
       <main className="workspace" data-view={settings.viewMode}>
         <header className="workspace-header">
@@ -173,7 +180,9 @@ export const AppShell = () => {
           onClose={() => setPaletteOpen(false)}
         />
       )}
-      {aboutOpen && <AboutDialog onClose={() => setAboutOpen(false)} />}
+      {aboutOpen && (
+        <AboutDialog returnFocus={aboutReturnFocus} onClose={() => setAboutOpen(false)} />
+      )}
       <div className="undo-toast-stack" aria-label="Recent deletions">
         {pendingDeletions.map((pending) => (
           <UndoToast
