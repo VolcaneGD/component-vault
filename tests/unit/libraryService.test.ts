@@ -80,6 +80,40 @@ describe('LibraryService', () => {
       'Aurora Button',
     ]);
   });
+
+  it.each(['http://example.test', 'https://example.test/path', 'not a URL'])(
+    'rejects and rolls back a component with an invalid preview origin: %s',
+    origin => {
+      const database = openTestDatabase();
+      const service = createLibraryService(database);
+      const library = service.saveLibrary({ name: 'Preview validation', description: '' });
+
+      expect(() => service.saveComponent({
+        ...componentInput(library.id, 'Unsafe component'),
+        previewPolicy: {
+          allowScripts: false, allowForms: false, allowPopups: false,
+          externalNetworkEnabled: true, allowedOrigins: [origin],
+        },
+      })).toThrow('Invalid preview policy');
+      expect(database.db.prepare('SELECT COUNT(*) AS count FROM components').get()).toEqual({ count: 0 });
+    },
+  );
+
+  it('persists canonical HTTPS preview origins supplied directly to the service', () => {
+    const service = createLibraryService(openTestDatabase());
+    const library = service.saveLibrary({ name: 'Safe previews', description: '' });
+    const saved = service.saveComponent({
+      ...componentInput(library.id, 'Safe component'),
+      previewPolicy: {
+        allowScripts: false, allowForms: false, allowPopups: false,
+        externalNetworkEnabled: true, allowedOrigins: ['https://cdn.example.test'],
+      },
+    });
+
+    expect(service.getComponent(saved.id)?.previewPolicy.allowedOrigins).toEqual([
+      'https://cdn.example.test',
+    ]);
+  });
 });
 
 describe('SettingsService', () => {

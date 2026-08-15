@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import type {
+import {
+  isPreviewPolicy,
   ComponentRecord,
   ComponentSaveInput,
   LibraryRecord,
@@ -67,6 +68,7 @@ export const createLibraryService = ({ db }: DatabaseContext): LibraryService =>
   ).all(libraryId).map(row => readComponent(db, row as ComponentRow));
 
   const saveComponent = db.transaction((component: ComponentSaveInput): ComponentRecord => {
+    if (!isPreviewPolicy(component.previewPolicy)) throw new Error('Invalid preview policy');
     const now = new Date().toISOString();
     const id = component.id ?? randomUUID();
     const existing = db.prepare('SELECT id FROM components WHERE id = ?').get(id);
