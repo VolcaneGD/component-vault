@@ -43,6 +43,7 @@ export interface WindowState {
   x: number | null;
   y: number | null;
   isMaximized: boolean;
+  displayId: string | null;
 }
 
 export interface ComponentVaultApi {
