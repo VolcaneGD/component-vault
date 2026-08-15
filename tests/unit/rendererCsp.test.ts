@@ -8,8 +8,12 @@ const cspFor = async (mode: 'development' | 'production') => {
   const source = await rendererTemplate();
   const environment = await readFile(resolve(process.cwd(), `.env.${mode}`), 'utf8').catch(() => '');
   const rawStyleSource = environment.match(/^VITE_DEV_STYLE_SOURCE=(.*)$/m)?.[1] ?? '';
+  const rawConnectSource = environment.match(/^VITE_RENDERER_CONNECT_SOURCE=(.*)$/m)?.[1] ?? '';
   const styleSource = rawStyleSource.replace(/^"(.*)"$/, '$1');
-  return source.replace('%VITE_DEV_STYLE_SOURCE%', styleSource);
+  const connectSource = rawConnectSource.replace(/^"(.*)"$/, '$1');
+  return source
+    .replace('%VITE_DEV_STYLE_SOURCE%', styleSource)
+    .replace('%VITE_RENDERER_CONNECT_SOURCE%', connectSource);
 };
 
 describe('renderer CSP configuration', () => {
@@ -17,5 +21,10 @@ describe('renderer CSP configuration', () => {
     expect(await cspFor('development')).toContain("style-src 'self' 'unsafe-inline'");
     expect(await cspFor('production')).toContain("style-src 'self';");
     expect(await cspFor('production')).not.toContain("'unsafe-inline'");
+  });
+
+  it('blocks renderer fetches in production while retaining the Vite development connection', async () => {
+    expect(await cspFor('production')).toContain("connect-src 'none'");
+    expect(await cspFor('development')).toContain("connect-src 'self' ws:");
   });
 });

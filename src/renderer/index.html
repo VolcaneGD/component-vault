@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self'%VITE_DEV_STYLE_SOURCE%; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; frame-src component-vault-preview:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+      content="default-src 'self'; script-src 'self'; style-src 'self'%VITE_DEV_STYLE_SOURCE%; img-src 'self' data:; font-src 'self' data:; connect-src %VITE_RENDERER_CONNECT_SOURCE%; frame-src component-vault-preview:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
     />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Component Vault</title>
