@@ -1,4 +1,5 @@
 import type { LibraryRecord } from '../../../../shared/contracts';
+import { useAppStore } from '../../store/useAppStore';
 
 interface LibrarySidebarProps {
   libraries: LibraryRecord[];
@@ -6,8 +7,13 @@ interface LibrarySidebarProps {
   onSelectLibrary: (libraryId: string | null) => void;
 }
 
-export const LibrarySidebar = ({ libraries, selectedLibraryId, onSelectLibrary }: LibrarySidebarProps) => (
-  <aside className="library-sidebar">
+export const LibrarySidebar = ({ libraries, selectedLibraryId, onSelectLibrary }: LibrarySidebarProps) => {
+  const { components, searchQuery, selectedTags, setSearchQuery, toggleTag, clearFilters } = useAppStore();
+  const tags = Array.from(new Set(components.flatMap((component) => component.tags)))
+    .sort((left, right) => left.localeCompare(right));
+
+  return (
+    <aside className="library-sidebar">
     <div className="library-sidebar__brand">
       <span className="library-sidebar__mark" aria-hidden="true">CV</span>
       <div>
@@ -20,7 +26,13 @@ export const LibrarySidebar = ({ libraries, selectedLibraryId, onSelectLibrary }
 
     <label className="library-sidebar__search">
       <span className="sr-only">Search components</span>
-      <input type="search" placeholder="Search components" aria-label="Search components" />
+      <input
+        type="search"
+        placeholder="Search components"
+        aria-label="Search components"
+        value={searchQuery}
+        onChange={(event) => setSearchQuery(event.target.value)}
+      />
     </label>
 
     <nav aria-label="Component Vault navigation" className="library-sidebar__nav">
@@ -53,9 +65,20 @@ export const LibrarySidebar = ({ libraries, selectedLibraryId, onSelectLibrary }
       <section aria-labelledby="tags-heading">
         <h2 id="tags-heading">Tags</h2>
         <div className="tag-list" aria-label="Component tags">
-          <button type="button">Buttons</button>
-          <button type="button">Forms</button>
-          <button type="button">Layouts</button>
+          {tags.map((tag) => (
+            <button
+              key={tag}
+              type="button"
+              aria-label={`Filter by tag ${tag}`}
+              aria-pressed={selectedTags.includes(tag)}
+              onClick={() => toggleTag(tag)}
+            >
+              {tag}
+            </button>
+          ))}
+          {(searchQuery || selectedTags.length > 0) && (
+            <button type="button" className="tag-list__clear" onClick={clearFilters}>Clear filters</button>
+          )}
         </div>
       </section>
     </nav>
@@ -65,5 +88,6 @@ export const LibrarySidebar = ({ libraries, selectedLibraryId, onSelectLibrary }
       <button type="button">Export</button>
       <button type="button">Settings</button>
     </div>
-  </aside>
-);
+    </aside>
+  );
+};

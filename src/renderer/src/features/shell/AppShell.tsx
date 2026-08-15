@@ -5,8 +5,8 @@ import { useAppStore } from '../../store/useAppStore';
 import { ViewSwitcher } from './ViewSwitcher';
 
 const WorkbenchPlaceholder = lazy(() => import('./WorkbenchView'));
-const GalleryPlaceholder = lazy(() => import('./GalleryView'));
-const StudioPlaceholder = lazy(() => import('./AdaptiveStudioView'));
+const GalleryPlaceholder = lazy(() => import('../library/GalleryView'));
+const StudioPlaceholder = lazy(() => import('../studio/AdaptiveStudio'));
 
 const modeContent: Record<ViewMode, LazyExoticComponent<ComponentType>> = {
   workbench: WorkbenchPlaceholder,

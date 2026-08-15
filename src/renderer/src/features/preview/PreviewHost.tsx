@@ -18,6 +18,9 @@ import {
 interface PreviewHostProps {
   component: ComponentRecord;
   onPreviewPolicyChange?: (policy: PreviewPolicy) => Promise<PreviewPolicy>;
+  loading?: 'eager' | 'lazy';
+  title?: string;
+  compact?: boolean;
 }
 
 interface AuthoritativePolicy {
@@ -51,7 +54,13 @@ const policyFailure = (error: unknown): PreviewError => ({
   message: `Could not save preview policy: ${error instanceof Error ? error.message : String(error)}`,
 });
 
-export const PreviewHost = ({ component, onPreviewPolicyChange }: PreviewHostProps) => {
+export const PreviewHost = ({
+  component,
+  onPreviewPolicyChange,
+  loading = 'eager',
+  title = 'Component preview',
+  compact = false,
+}: PreviewHostProps) => {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const rateWindow = useRef<number[]>([]);
   const currentComponent = useRef({ id: component.id, policyKey: previewPolicyKey(component.previewPolicy) });
@@ -204,12 +213,16 @@ export const PreviewHost = ({ component, onPreviewPolicyChange }: PreviewHostPro
   }, [appendError, component.id, effectivePolicy, onPreviewPolicyChange]);
 
   return (
-    <section className="preview-host" aria-label="Live component preview">
+    <section
+      className={`preview-host${compact ? ' preview-host--compact' : ''}`}
+      aria-label={compact ? undefined : 'Live component preview'}
+    >
       <iframe
         key={previewId}
         ref={iframeRef}
         className="preview-host__frame"
-        title="Component preview"
+        title={title}
+        loading={loading}
         sandbox="allow-scripts allow-forms allow-modals"
         referrerPolicy="no-referrer"
         src={frameSource}

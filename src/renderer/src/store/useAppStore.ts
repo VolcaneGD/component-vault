@@ -15,13 +15,22 @@ interface AppStore {
   componentsLibraryId: string | null;
   selectedLibraryId: string | null;
   selectedComponentId: string | null;
+  selectedComponentIds: string[];
+  searchQuery: string;
+  selectedTags: string[];
   isHydrated: boolean;
   mutationVersion: number;
   hydrate: () => Promise<void>;
   setViewMode: (viewMode: ViewMode) => void;
   setSelectedLibraryId: (libraryId: string | null) => void;
   setSelectedComponentId: (componentId: string | null) => void;
+  setSearchQuery: (query: string) => void;
+  toggleTag: (tag: string) => void;
+  clearFilters: () => void;
+  toggleComponentSelection: (componentId: string) => void;
+  clearComponentSelection: () => void;
   loadComponents: (libraryId: string) => Promise<void>;
+  reorderComponents: (libraryId: string, componentIds: string[]) => Promise<void>;
   updateComponentDraft: (component: ComponentRecord) => void;
   saveComponent: (component: ComponentSaveInput) => Promise<ComponentRecord>;
   duplicateComponent: (component: ComponentRecord) => Promise<ComponentRecord>;
@@ -36,6 +45,7 @@ const persist = (patch: Partial<AppSettings>) => {
 const componentOperationTails = new Map<string, Promise<unknown>>();
 const componentMutationGenerations = new Map<string, number>();
 const deletingComponentIds = new Set<string>();
+let reorderGeneration = 0;
 
 const mutationGeneration = (componentId: string): number =>
   componentMutationGenerations.get(componentId) ?? 0;
@@ -83,6 +93,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
   componentsLibraryId: null,
   selectedLibraryId: null,
   selectedComponentId: null,
+  selectedComponentIds: [],
+  searchQuery: '',
+  selectedTags: [],
   isHydrated: false,
   mutationVersion: 0,
   hydrate: async () => {
@@ -119,6 +132,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     set((state) => ({
       selectedLibraryId,
       selectedComponentId: null,
+      selectedComponentIds: [],
       components: [],
       componentsLibraryId: null,
       mutationVersion: state.mutationVersion + 1,
@@ -129,6 +143,19 @@ export const useAppStore = create<AppStore>((set, get) => ({
     set((state) => ({ selectedComponentId, mutationVersion: state.mutationVersion + 1 }));
     persist({ lastComponentId: selectedComponentId });
   },
+  setSearchQuery: (searchQuery) => set({ searchQuery }),
+  toggleTag: (tag) => set((state) => ({
+    selectedTags: state.selectedTags.includes(tag)
+      ? state.selectedTags.filter((item) => item !== tag)
+      : [...state.selectedTags, tag],
+  })),
+  clearFilters: () => set({ searchQuery: '', selectedTags: [] }),
+  toggleComponentSelection: (componentId) => set((state) => ({
+    selectedComponentIds: state.selectedComponentIds.includes(componentId)
+      ? state.selectedComponentIds.filter((id) => id !== componentId)
+      : [...state.selectedComponentIds, componentId],
+  })),
+  clearComponentSelection: () => set({ selectedComponentIds: [] }),
   loadComponents: async (libraryId) => {
     const components = await window.componentVault.listComponents(libraryId);
     set((state) => {
@@ -139,8 +166,28 @@ export const useAppStore = create<AppStore>((set, get) => ({
       if (selectedComponentId !== state.selectedComponentId) {
         persist({ lastComponentId: selectedComponentId });
       }
-      return { components, componentsLibraryId: libraryId, selectedComponentId };
+      return {
+        components,
+        componentsLibraryId: libraryId,
+        selectedComponentId,
+        selectedComponentIds: state.selectedComponentIds.filter((id) =>
+          components.some((component) => component.id === id)),
+      };
     });
+  },
+  reorderComponents: async (libraryId, componentIds) => {
+    const generation = ++reorderGeneration;
+    const previous = get().components;
+    const byId = new Map(previous.map((component) => [component.id, component]));
+    const reordered = componentIds.map((id) => byId.get(id)).filter(Boolean) as ComponentRecord[];
+    if (reordered.length !== previous.length) throw new Error('Component order is incomplete');
+    set({ components: reordered });
+    try {
+      await window.componentVault.reorderComponents(libraryId, componentIds);
+    } catch (error) {
+      if (generation === reorderGeneration) set({ components: previous });
+      throw error;
+    }
   },
   updateComponentDraft: (component) => {
     set((state) => ({
@@ -217,7 +264,11 @@ export const useAppStore = create<AppStore>((set, get) => ({
           if (selectedComponentId !== state.selectedComponentId) {
             persist({ lastComponentId: selectedComponentId });
           }
-          return { components, selectedComponentId };
+          return {
+            components,
+            selectedComponentId,
+            selectedComponentIds: state.selectedComponentIds.filter((id) => id !== componentId),
+          };
         });
       });
     } finally {
@@ -225,9 +276,13 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }
   },
   updateLayout: (patch) => {
-    const normalizedPatch = patch.editorPreviewRatio === undefined
-      ? patch
-      : { ...patch, editorPreviewRatio: Math.min(0.8, Math.max(0.25, patch.editorPreviewRatio)) };
+    const normalizedPatch: Partial<AppSettings> = { ...patch };
+    if (patch.editorPreviewRatio !== undefined) {
+      normalizedPatch.editorPreviewRatio = Math.min(0.8, Math.max(0.25, patch.editorPreviewRatio));
+    }
+    if (patch.galleryColumns !== undefined) {
+      normalizedPatch.galleryColumns = Math.min(4, Math.max(1, Math.round(patch.galleryColumns))) as 1 | 2 | 3 | 4;
+    }
     set((state) => ({
       settings: { ...state.settings, ...normalizedPatch },
       mutationVersion: state.mutationVersion + 1,
