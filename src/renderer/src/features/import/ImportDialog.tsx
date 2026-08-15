@@ -15,7 +15,7 @@ import type {
 } from '../../../../shared/contracts';
 
 type ImportMode = 'files' | 'code';
-type CandidateStatus = 'ready' | 'failed' | 'saving' | 'saved';
+type CandidateStatus = 'ready' | 'failed' | 'save-failed' | 'saving' | 'saved';
 
 interface Candidate {
   id: string;
@@ -32,7 +32,7 @@ interface ImportDialogProps {
   libraries?: LibraryRecord[];
   selectedLibraryId?: string | null;
   onClose?: () => void;
-  onSaved?: (components: ComponentRecord[]) => void;
+  onSaved?: (components: ComponentRecord[]) => Promise<void> | void;
   onLibraryCreated?: (library: LibraryRecord) => void;
   onStartCode?: (libraryId: string) => void;
 }
@@ -97,7 +97,9 @@ export const ImportDialog = ({
   useEffect(() => initialFocusRef.current?.focus(), []);
 
   const readyCandidates = useMemo(
-    () => candidates.filter((candidate) => candidate.status === 'ready' && candidate.draft?.name.trim()),
+    () => candidates.filter((candidate) =>
+      (candidate.status === 'ready' || candidate.status === 'save-failed')
+      && candidate.draft?.name.trim()),
     [candidates],
   );
 
@@ -173,11 +175,11 @@ export const ImportDialog = ({
           : item));
       } catch {
         setCandidates((current) => current.map((item) => item.id === candidate.id
-          ? { ...item, status: 'failed', message: 'Could not save this component.' }
+          ? { ...item, status: 'save-failed', message: 'Could not save this component.' }
           : item));
       }
     }
-    if (saved.length > 0) onSaved?.(saved);
+    if (saved.length > 0) await onSaved?.(saved);
   }, [libraryId, onSaved, readyCandidates]);
 
   const createLibrary = useCallback(async () => {
@@ -300,7 +302,7 @@ export const ImportDialog = ({
                   </div>
                   <ul>
                     {candidates.map((candidate) => (
-                      <li key={candidate.id} className={`import-candidate import-candidate--${candidate.status}`}>
+                      <li key={candidate.id} className={`import-candidate import-candidate--${candidate.status === 'save-failed' ? 'failed' : candidate.status}`}>
                         <div className="import-candidate__identity">
                           <strong>{candidate.fileName}</strong>
                           <span>{candidate.draft ? `${codeCharacters(candidate.draft).toLocaleString()} characters` : `${candidate.size.toLocaleString()} bytes`}</span>
@@ -321,7 +323,7 @@ export const ImportDialog = ({
                           {candidate.status === 'ready' && 'Ready'}
                           {candidate.status === 'saving' && 'Working…'}
                           {candidate.status === 'saved' && 'Added'}
-                          {candidate.status === 'failed' && 'Failed'}
+                          {(candidate.status === 'failed' || candidate.status === 'save-failed') && 'Failed'}
                         </span>
                         {candidate.message && (
                           <div role={candidate.message === LARGE_FILE_MESSAGE ? 'alert' : 'status'} className="import-candidate__message">

@@ -33,7 +33,7 @@ interface AppStore {
   reorderComponents: (libraryId: string, componentIds: string[]) => Promise<void>;
   updateComponentDraft: (component: ComponentRecord) => void;
   beginCodeComponent: (libraryId: string) => ComponentRecord;
-  acceptSavedComponents: (components: ComponentRecord[]) => void;
+  acceptSavedComponents: (components: ComponentRecord[]) => Promise<void>;
   acceptLibrary: (library: LibraryRecord) => void;
   saveComponent: (component: ComponentSaveInput) => Promise<ComponentRecord>;
   duplicateComponent: (component: ComponentRecord) => Promise<ComponentRecord>;
@@ -291,23 +291,28 @@ export const useAppStore = create<AppStore>((set, get) => ({
     persist({ viewMode: 'workbench', lastLibraryId: libraryId, lastComponentId: null });
     return draft;
   },
-  acceptSavedComponents: (savedComponents) => {
+  acceptSavedComponents: async (savedComponents) => {
     if (savedComponents.length === 0) return;
     const last = savedComponents.at(-1)!;
-    set((state) => {
-      if (state.componentsLibraryId !== null && state.componentsLibraryId !== last.libraryId) return state;
-      const savedIds = new Set(savedComponents.map((component) => component.id));
-      return {
-        components: [
-          ...state.components.filter((component) => !savedIds.has(component.id)),
-          ...savedComponents,
-        ],
-        componentsLibraryId: last.libraryId,
-        selectedLibraryId: last.libraryId,
-        selectedComponentId: last.id,
-        mutationVersion: state.mutationVersion + 1,
-      };
-    });
+    let loaded: ComponentRecord[] = [];
+    try {
+      loaded = await window.componentVault.listComponents(last.libraryId);
+    } catch {
+      // The saved records still provide a consistent target view when reloading fails.
+    }
+    const savedById = new Map(savedComponents.map((component) => [component.id, component]));
+    const components = [
+      ...loaded.map((component) => savedById.get(component.id) ?? component),
+      ...savedComponents.filter((component) => !loaded.some((item) => item.id === component.id)),
+    ];
+    set((state) => ({
+      components,
+      componentsLibraryId: last.libraryId,
+      selectedLibraryId: last.libraryId,
+      selectedComponentId: last.id,
+      selectedComponentIds: [],
+      mutationVersion: state.mutationVersion + 1,
+    }));
     persist({ lastLibraryId: last.libraryId, lastComponentId: last.id });
   },
   acceptLibrary: (library) => {

@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ComponentRecord, ComponentSaveInput } from '../../src/shared/contracts';
@@ -8,13 +9,26 @@ const { disposeComponentModels } = vi.hoisted(() => ({
 }));
 
 vi.mock('../../src/renderer/src/features/editor/MonacoEditorAdapter', () => ({
-  MonacoEditor: ({ language, path, value, onChange }: {
+  MonacoEditor: ({ language, path, value, onChange, onMount }: {
     language: string;
     path: string;
     value: string;
     onChange: (value: string) => void;
+    onMount?: (editor: unknown, monaco: unknown) => void;
   }) => (
     <textarea
+      ref={(node) => {
+        if (node && onMount) {
+          onMount({
+            focus: () => node.focus(),
+            addCommand: vi.fn(),
+            getAction: vi.fn(),
+          }, {
+            KeyMod: { CtrlCmd: 1 },
+            KeyCode: { KeyS: 1 },
+          });
+        }
+      }}
       data-testid={`${language}-editor-fallback`}
       data-model-path={path}
       value={value}
@@ -74,6 +88,89 @@ afterEach(() => {
 });
 
 describe('ComponentEditor', () => {
+  it('keeps a newer transient edit dirty across UUID rekey and persists it before showing saved', async () => {
+    vi.useFakeTimers();
+    let resolveCreate!: (component: ComponentRecord) => void;
+    const createResult = new Promise<ComponentRecord>((resolve) => { resolveCreate = resolve; });
+    const persist = vi.fn<(input: ComponentSaveInput) => Promise<ComponentRecord>>()
+      .mockReturnValueOnce(createResult)
+      .mockImplementationOnce(async (input) => ({
+        ...fixture,
+        ...input,
+        id: input.id!,
+        updatedAt: '2026-08-15T00:00:02.000Z',
+      }));
+    const transient = {
+      ...fixture,
+      id: 'draft:new',
+      name: 'Live button',
+      html: '',
+      css: '',
+      javascript: '',
+    };
+    const Harness = () => {
+      const [component, setComponent] = useState(transient);
+      return (
+        <ComponentEditor
+          component={component}
+          isNew={component.id.startsWith('draft:')}
+          onSave={async (input) => {
+            const saved = await persist(input);
+            setComponent(saved);
+            return saved;
+          }}
+        />
+      );
+    };
+    render(<Harness />);
+
+    fireEvent.change(screen.getByTestId('html-editor-fallback'), {
+      target: { value: '<button>First</button>' },
+    });
+    await act(() => vi.advanceTimersByTimeAsync(500));
+    expect(persist).toHaveBeenCalledOnce();
+
+    fireEvent.change(screen.getByTestId('html-editor-fallback'), {
+      target: { value: '<button>Latest</button>' },
+    });
+    await act(async () => resolveCreate({
+      ...fixture,
+      id: 'a19979d8-cb60-4eb8-bc5f-c905ba14adf0',
+      name: 'Live button',
+      html: '<button>First</button>',
+      css: '',
+      javascript: '',
+      updatedAt: '2026-08-15T00:00:01.000Z',
+    }));
+
+    expect(screen.getByTestId('html-editor-fallback')).toHaveValue('<button>Latest</button>');
+    expect(screen.getByText('Saving')).toBeInTheDocument();
+    expect(persist).toHaveBeenCalledOnce();
+
+    await act(() => vi.advanceTimersByTimeAsync(500));
+    expect(persist).toHaveBeenCalledTimes(2);
+    expect(persist).toHaveBeenLastCalledWith(expect.objectContaining({
+      id: 'a19979d8-cb60-4eb8-bc5f-c905ba14adf0',
+      html: '<button>Latest</button>',
+    }));
+    expect(screen.getByText('Saved')).toBeInTheDocument();
+  });
+
+  it('resets a new code-first draft from JavaScript to HTML', () => {
+    const { rerender } = render(<ComponentEditor component={fixture} />);
+    fireEvent.click(screen.getByRole('tab', { name: 'JavaScript' }));
+    expect(screen.getByRole('tab', { name: 'JavaScript' })).toHaveAttribute('aria-selected', 'true');
+
+    rerender(<ComponentEditor
+      component={{ ...fixture, id: 'draft:new', name: '', html: '', css: '', javascript: '' }}
+      isNew
+      autoFocusHtml
+    />);
+
+    expect(screen.getByRole('tab', { name: 'HTML' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByTestId('html-editor-fallback')).toHaveFocus();
+  });
+
   it('keeps an invalid new draft live without persisting it', async () => {
     vi.useFakeTimers();
     const onChange = vi.fn();

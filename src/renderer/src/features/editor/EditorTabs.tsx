@@ -66,6 +66,10 @@ export const EditorTabs = ({
     return () => disposeComponentModels(componentId);
   }, [componentId]);
 
+  useEffect(() => {
+    if (autoFocusHtml) setActiveLanguage('html');
+  }, [autoFocusHtml, componentId]);
+
   const configureMonaco = useCallback<BeforeMount>((monaco) => {
     monaco.editor.defineTheme('component-vault-dark', componentVaultTheme);
   }, []);

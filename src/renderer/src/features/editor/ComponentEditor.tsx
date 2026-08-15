@@ -97,6 +97,24 @@ export const ComponentEditor = ({
       setDraft(merged);
       return;
     }
+    const isDraftRekey = componentIdRef.current.startsWith('draft:')
+      && !component.id.startsWith('draft:');
+    if (isDraftRekey) {
+      componentIdRef.current = component.id;
+      incomingPolicyRef.current = incomingPolicy;
+      const rekeyed = {
+        ...draftRef.current,
+        id: component.id,
+        createdAt: component.createdAt,
+        updatedAt: component.updatedAt,
+        deletedAt: component.deletedAt,
+        previewPolicy: component.previewPolicy,
+      };
+      draftRef.current = rekeyed;
+      setDraft(rekeyed);
+      setSaveState(dirtyRef.current ? 'saving' : 'saved');
+      return;
+    }
     flushDirtySnapshot();
     componentIdRef.current = component.id;
     incomingPolicyRef.current = incomingPolicy;

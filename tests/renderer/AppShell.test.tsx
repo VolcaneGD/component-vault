@@ -41,6 +41,59 @@ afterEach(() => {
 });
 
 describe('App shell navigation', () => {
+  it('loads and selects an imported component from a non-active target library', async () => {
+    const activeLibraryId = '7aa4a429-da7d-4ea0-bf8e-4deca38e95aa';
+    const targetLibraryId = 'b3633404-965c-4748-b6e8-d6bcfca3345e';
+    const imported: ComponentRecord = {
+      id: 'a19979d8-cb60-4eb8-bc5f-c905ba14adf0',
+      libraryId: targetLibraryId,
+      name: 'Imported card',
+      description: '',
+      category: '',
+      tags: [],
+      html: '<article>Card</article>',
+      css: '',
+      javascript: '',
+      sourceType: 'import',
+      originalFileName: 'card.html',
+      previewPolicy: {
+        allowScripts: false,
+        allowForms: false,
+        allowPopups: false,
+        externalNetworkEnabled: false,
+        allowedOrigins: [],
+      },
+      createdAt: '2026-08-15T00:00:00.000Z',
+      updatedAt: '2026-08-15T00:00:00.000Z',
+      deletedAt: null,
+    };
+    const existingTarget = { ...imported, id: 'e43f9f9a-d4e1-45f1-a3ea-caba29f822fb', name: 'Existing card' };
+    const listComponents = vi.fn().mockResolvedValue([existingTarget, imported]);
+    Object.defineProperty(window, 'componentVault', {
+      configurable: true,
+      value: { listComponents, saveAppSettings },
+    });
+    useAppStore.setState({
+      components: [{ ...imported, id: 'f212f7b1-0241-43ab-bbe5-59dfd450af34', libraryId: activeLibraryId }],
+      componentsLibraryId: activeLibraryId,
+      selectedLibraryId: activeLibraryId,
+    });
+
+    await useAppStore.getState().acceptSavedComponents([imported]);
+
+    expect(listComponents).toHaveBeenCalledWith(targetLibraryId);
+    expect(useAppStore.getState()).toMatchObject({
+      components: [existingTarget, imported],
+      componentsLibraryId: targetLibraryId,
+      selectedLibraryId: targetLibraryId,
+      selectedComponentId: imported.id,
+    });
+    expect(saveAppSettings).toHaveBeenCalledWith({
+      lastLibraryId: targetLibraryId,
+      lastComponentId: imported.id,
+    });
+  });
+
   it('serializes creation with a newer draft save so the latest code reaches the saved id', async () => {
     let finishCreate!: (component: ComponentRecord) => void;
     const createResult = new Promise<ComponentRecord>((resolve) => { finishCreate = resolve; });

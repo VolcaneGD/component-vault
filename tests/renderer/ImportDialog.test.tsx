@@ -134,6 +134,43 @@ describe('ImportDialog', () => {
     expect(onStartCode).toHaveBeenCalledWith(library.id);
   });
 
+  it('keeps a database save failure retryable without reimporting or duplicating successes', async () => {
+    const secondaryDraft = {
+      ...draft,
+      name: 'Secondary Button',
+      originalFileName: 'secondary.html',
+    };
+    importHtmlFiles.mockResolvedValueOnce([
+      { ok: true, draft },
+      { ok: true, draft: secondaryDraft },
+    ]);
+    saveComponent
+      .mockImplementationOnce(async (input: ComponentSaveInput) => savedRecord(input))
+      .mockRejectedValueOnce(new Error('database unavailable'))
+      .mockImplementationOnce(async (input: ComponentSaveInput) => savedRecord(input));
+    const user = userEvent.setup();
+    render(<ImportDialog mode="files" libraries={[library]} selectedLibraryId={library.id} />);
+
+    await user.upload(
+      screen.getByLabelText('HTML files'),
+      [
+        new File([draft.html], 'button.html', { type: 'text/html' }),
+        new File([draft.html], 'secondary.html', { type: 'text/html' }),
+      ],
+    );
+    await user.click(await screen.findByRole('button', { name: 'Add 2 components' }));
+
+    expect(screen.getByText('Could not save this component.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Add 1 component' })).toBeEnabled();
+    await user.click(screen.getByRole('button', { name: 'Add 1 component' }));
+
+    expect(saveComponent).toHaveBeenCalledTimes(3);
+    expect(saveComponent.mock.calls.filter(([input]) => input.name === 'Primary Button')).toHaveLength(1);
+    expect(saveComponent.mock.calls.filter(([input]) => input.name === 'Secondary Button')).toHaveLength(2);
+    expect(await screen.findAllByText('Added')).toHaveLength(2);
+    expect(screen.getByRole('button', { name: 'Add 0 components' })).toBeDisabled();
+  });
+
   it('accepts dropped HTML files through the same import path', async () => {
     importHtmlFiles.mockResolvedValueOnce([{ ok: true, draft }]);
     render(<ImportDialog mode="files" libraries={[library]} selectedLibraryId={library.id} />);
