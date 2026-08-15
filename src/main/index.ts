@@ -38,6 +38,12 @@ app.whenReady().then(() => {
   });
 });
 
+app.on('before-quit', () => {
+  if (mainWindow && windowStateController) {
+    windowStateController.flush(mainWindow as unknown as ManagedWindow);
+  }
+});
+
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });

@@ -31,7 +31,7 @@ export interface ManagedWindow {
   getNormalBounds: () => DisplayWorkArea;
   isMaximized: () => boolean;
   maximize: () => void;
-  on: (event: 'move' | 'resize', listener: () => void) => unknown;
+  on: (event: 'close' | 'move' | 'resize', listener: () => void) => unknown;
   once: (event: 'ready-to-show', listener: () => void) => unknown;
   setBounds: (bounds: DisplayWorkArea) => void;
 }
@@ -184,8 +184,17 @@ export class WindowStateController {
     window.once('ready-to-show', () => {
       if (state.isMaximized) window.maximize();
     });
+    window.on('close', () => this.flush(window));
     window.on('move', () => this.scheduleSave(window));
     window.on('resize', () => this.scheduleSave(window));
+  }
+
+  public flush(window: ManagedWindow): void {
+    if (!this.saveTimer) return;
+
+    clearTimeout(this.saveTimer);
+    this.saveTimer = null;
+    this.persist(window);
   }
 
   private orderedDisplays(): WindowDisplay[] {
@@ -196,17 +205,21 @@ export class WindowStateController {
   private scheduleSave(window: ManagedWindow): void {
     if (this.saveTimer) clearTimeout(this.saveTimer);
     this.saveTimer = setTimeout(() => {
-      const bounds = window.getNormalBounds();
-      const display = displayWithLargestIntersection(bounds, this.orderedDisplays()) ?? this.dependencies.displays.getPrimaryDisplay();
-      this.dependencies.store.write({
-        x: bounds.x,
-        y: bounds.y,
-        width: bounds.width,
-        height: bounds.height,
-        isMaximized: window.isMaximized(),
-        displayId: String(display.id),
-      });
       this.saveTimer = null;
+      this.persist(window);
     }, saveDelayMs);
+  }
+
+  private persist(window: ManagedWindow): void {
+    const bounds = window.getNormalBounds();
+    const display = displayWithLargestIntersection(bounds, this.orderedDisplays()) ?? this.dependencies.displays.getPrimaryDisplay();
+    this.dependencies.store.write({
+      x: bounds.x,
+      y: bounds.y,
+      width: bounds.width,
+      height: bounds.height,
+      isMaximized: window.isMaximized(),
+      displayId: String(display.id),
+    });
   }
 }

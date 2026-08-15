@@ -93,6 +93,34 @@ describe('WindowStateController', () => {
     ]);
     vi.useRealTimers();
   });
+
+  it('saves pending normal bounds once when closed before the debounce expires', () => {
+    vi.useFakeTimers();
+    const writes: unknown[] = [];
+    const window = createManagedWindow({ x: 48, y: 96, width: 1100, height: 700 });
+    const controller = new WindowStateController(createDependencies(writes));
+
+    controller.restore();
+    controller.track(window);
+    window.emit('move');
+    window.emit('close');
+
+    expect(writes).toEqual([
+      {
+        x: 48,
+        y: 96,
+        width: 1100,
+        height: 700,
+        isMaximized: true,
+        displayId: 'primary',
+      },
+    ]);
+
+    vi.advanceTimersByTime(300);
+
+    expect(writes).toHaveLength(1);
+    vi.useRealTimers();
+  });
 });
 
 const createDependencies = (writes: unknown[]): WindowStateControllerDependencies => ({
@@ -114,10 +142,12 @@ const createDependencies = (writes: unknown[]): WindowStateControllerDependencie
   },
 });
 
-const createManagedWindow = (): ManagedWindow & { emit: (event: string) => void } => {
+const createManagedWindow = (
+  bounds = { x: 320, y: 160, width: 1200, height: 800 },
+): ManagedWindow & { emit: (event: string) => void } => {
   const listeners = new Map<string, () => void>();
   const window = {
-    getNormalBounds: () => ({ x: 320, y: 160, width: 1200, height: 800 }),
+    getNormalBounds: () => bounds,
     isMaximized: () => true,
     maximize: vi.fn(),
     on: (event: string, listener: () => void) => listeners.set(event, listener),
