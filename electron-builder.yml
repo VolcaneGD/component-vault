@@ -1,0 +1,45 @@
+appId: com.componentvault.desktop
+productName: Component Vault
+asar: true
+directories:
+  buildResources: build
+  output: release
+files:
+  - out/**/*
+  - package.json
+  - '!**/*.map'
+  - '!**/*.sqlite'
+  - '!**/*.sqlite-shm'
+  - '!**/*.sqlite-wal'
+  - '!**/*.backup'
+  - '!tests{,/**/*}'
+  - '!src{,/**/*}'
+  - '!docs{,/**/*}'
+  - '!.serena{,/**/*}'
+  - '!.superpowers{,/**/*}'
+extraResources:
+  - from: resources/THIRD_PARTY_NOTICES.md
+    to: THIRD_PARTY_NOTICES.md
+asarUnpack:
+  - node_modules/better-sqlite3/**/*
+  - node_modules/bindings/**/*
+win:
+  icon: build/icon.ico
+  executableName: ComponentVault
+  requestedExecutionLevel: asInvoker
+  target:
+    - target: nsis
+      arch:
+        - x64
+    - target: zip
+      arch:
+        - x64
+artifactName: '${productName}-${version}-${arch}.${ext}'
+nsis:
+  oneClick: false
+  perMachine: false
+  allowElevation: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+  shortcutName: Component Vault
