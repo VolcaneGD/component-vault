@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { gzipSync } from 'node:zlib';
 import type { ExportPayload } from '../../src/shared/contracts';
 import { createStandaloneHtml, parseComponentVaultHtml } from '../../src/main/services/exportHtml';
 
@@ -78,3 +79,134 @@ test('edits and saves the standalone library while the browser is offline', asyn
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test('retains oversized edits and saves an exact UTF-8 boundary after correction', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'component-vault-viewer-limits-'));
+  const exportedPath = join(directory, 'library.html');
+  await writeFile(exportedPath, await createStandaloneHtml(payload), 'utf8');
+  const browser = await chromium.launch({ channel: 'chrome' });
+
+  try {
+    const context = await browser.newContext({ acceptDownloads: true });
+    await context.setOffline(true);
+    const page = await context.newPage();
+    await page.goto(pathToFileURL(exportedPath).href);
+    await expect(page.getByRole('button', { name: '通信ボタン', exact: true })).toBeVisible();
+
+    const tooLarge = 'x'.repeat(2_000_001);
+    await page.getByLabel('Component code').evaluate((element, value) => {
+      const textarea = element as HTMLTextAreaElement;
+      textarea.value = value;
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    }, tooLarge);
+    await expect(page.locator('#status')).toContainText('HTML exceeds 2,000,000 UTF-8 bytes');
+    expect((await page.locator('#status').textContent())?.length).toBeLessThan(200);
+
+    let downloadCount = 0;
+    page.on('download', () => { downloadCount += 1; });
+    await page.getByRole('button', { name: 'Save edited HTML' }).click();
+    await page.waitForTimeout(300);
+    expect(downloadCount).toBe(0);
+    await expect(page.getByLabel('Component code')).toHaveValue(tooLarge);
+    await expect(page.locator('#status')).toContainText('Edits are retained');
+
+    await page.locator('#file-input').setInputFiles({
+      name: 'oversized.html',
+      mimeType: 'text/html',
+      buffer: Buffer.from(tooLarge, 'utf8'),
+    });
+    await expect(page.locator('#status')).toContainText('HTML exceeds 2,000,000 UTF-8 bytes');
+    expect((await page.locator('#status').textContent())?.length).toBeLessThan(200);
+    await expect(page.locator('#items > li')).toHaveCount(payload.components.length);
+    await expect(page.getByLabel('Component code')).toHaveValue(tooLarge);
+
+    const exactBoundary = `${'界'.repeat(666_666)}ab`;
+    await page.getByLabel('Component code').evaluate((element, value) => {
+      const textarea = element as HTMLTextAreaElement;
+      textarea.value = value;
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    }, exactBoundary);
+    const downloadPromise = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'Save edited HTML' }).click();
+    const download = await downloadPromise;
+    const savedPath = await download.path();
+    const restored = parseComponentVaultHtml(await readFile(savedPath!, 'utf8'));
+
+    expect(restored?.components[0].html).toBe(exactBoundary);
+  } finally {
+    await browser.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('rejects hostile existing bundles within bounded offline viewer errors', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'component-vault-hostile-viewer-'));
+  const baseHtml = await createStandaloneHtml(payload);
+  const validComponent = payload.components[0];
+  const encoded = (component: unknown): string => gzipSync(
+    Buffer.from(JSON.stringify(component), 'utf8'),
+  ).toString('base64');
+  const entry = (data: string) => ({ encoding: 'gzip-base64', data });
+  const envelope = (components: Array<{ encoding: string; data: string }>) => ({
+    format: 'component-vault',
+    version: 1,
+    library: payload.library,
+    components,
+  });
+  const largeComponent = { ...validComponent, html: 'x'.repeat(1_900_000), css: '', javascript: '' };
+  const fixtures = [
+    {
+      name: 'component-count.html',
+      source: replaceEnvelope(baseHtml, envelope(Array.from({ length: 1_001 }, () => entry(encoded(validComponent))))),
+    },
+    {
+      name: 'metadata.html',
+      source: replaceEnvelope(baseHtml, envelope([entry(encoded({
+        ...validComponent,
+        description: 'x'.repeat(10_001),
+      }))])),
+    },
+    {
+      name: 'single-bomb.html',
+      source: replaceEnvelope(baseHtml, envelope([entry(encoded({
+        ...validComponent,
+        padding: 'x'.repeat((6 * 1024 * 1024) + 1),
+      }))])),
+    },
+    {
+      name: 'cumulative.html',
+      source: replaceEnvelope(baseHtml, envelope(Array.from({ length: 7 }, (_, index) => entry(encoded({
+        ...largeComponent,
+        name: `Large ${index}`,
+      }))))),
+    },
+    {
+      name: 'source-size.html',
+      source: baseHtml.replace('</body>', `<!--${'x'.repeat(25 * 1024 * 1024)}--></body>`),
+    },
+  ];
+  const browser = await chromium.launch({ channel: 'chrome' });
+
+  try {
+    const context = await browser.newContext();
+    await context.setOffline(true);
+    for (const fixture of fixtures) {
+      const path = join(directory, fixture.name);
+      await writeFile(path, fixture.source, 'utf8');
+      const page = await context.newPage();
+      await page.goto(pathToFileURL(path).href);
+      await expect(page.locator('#status')).toContainText('exceeds safe offline limits');
+      expect((await page.locator('#status').textContent())?.length).toBeLessThan(200);
+      await expect(page.locator('#items > li')).toHaveCount(0);
+      await page.close();
+    }
+  } finally {
+    await browser.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+const replaceEnvelope = (html: string, envelope: unknown): string => html.replace(
+  /(<script id="component-vault-data" type="application\/json">)[^<]+(<\/script>)/,
+  `$1${JSON.stringify(envelope)}$2`,
+);
