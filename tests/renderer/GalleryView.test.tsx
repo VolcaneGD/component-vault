@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { defaultAppSettings, type ComponentRecord, type LibraryRecord } from '../../src/shared/contracts';
@@ -12,6 +12,12 @@ const library: LibraryRecord = {
   description: '',
   createdAt: '2026-08-15T00:00:00.000Z',
   updatedAt: '2026-08-15T00:00:00.000Z',
+};
+
+const secondaryLibrary: LibraryRecord = {
+  ...library,
+  id: 'library-2',
+  name: 'Dashboard kit',
 };
 
 const component = (
@@ -311,6 +317,31 @@ describe('GalleryView', () => {
 
     resolveFirst?.();
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Could not reorder components'));
+  });
+
+  it('does not show a pending reorder failure after switching to another library', async () => {
+    let rejectPending: ((error: Error) => void) | undefined;
+    const pendingPersistence = new Promise<void>((_resolve, reject) => { rejectPending = reject; });
+    reorderComponents.mockReturnValueOnce(pendingPersistence);
+    useAppStore.setState({ libraries: [library, secondaryLibrary] });
+    render(<GalleryView columns={3} />);
+
+    fireEvent.dragStart(screen.getByRole('article', { name: 'Primary Button' }), {
+      dataTransfer: { setData: vi.fn(), effectAllowed: 'move' },
+    });
+    fireEvent.drop(screen.getByRole('article', { name: 'Primary Card' }));
+    await waitFor(() => expect(reorderComponents).toHaveBeenCalledOnce());
+
+    useAppStore.getState().setSelectedLibraryId(secondaryLibrary.id);
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('No components match'));
+
+    await act(async () => {
+      rejectPending?.(new Error('library A reorder failed'));
+      await pendingPersistence.catch(() => undefined);
+    });
+
+    expect(useAppStore.getState().selectedLibraryId).toBe(secondaryLibrary.id);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
   it('serializes overlapping reorders so persistence cannot finish out of order', async () => {

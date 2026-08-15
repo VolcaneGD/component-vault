@@ -209,7 +209,7 @@ export const GalleryView = ({ columns }: GalleryViewProps) => {
   const initialColumns = columns ?? settings.galleryColumns;
   const [galleryColumns, setGalleryColumns] = useState<GalleryColumns>(initialColumns);
   const [virtualStart, setVirtualStart] = useState(0);
-  const [reorderError, setReorderError] = useState('');
+  const [reorderError, setReorderError] = useState<{ libraryId: string; message: string } | null>(null);
   const draggedId = useRef<string | null>(null);
   const reorderRequestGeneration = useRef(0);
   const activeLibraryId = selectedLibraryId ?? libraries[0]?.id ?? null;
@@ -217,6 +217,12 @@ export const GalleryView = ({ columns }: GalleryViewProps) => {
   useEffect(() => {
     if (columns === undefined) setGalleryColumns(settings.galleryColumns);
   }, [columns, settings.galleryColumns]);
+
+  useEffect(() => {
+    reorderRequestGeneration.current += 1;
+    draggedId.current = null;
+    setReorderError(null);
+  }, [activeLibraryId]);
 
   useEffect(() => {
     if (!activeLibraryId || componentsLibraryId === activeLibraryId) return;
@@ -260,13 +266,16 @@ export const GalleryView = ({ columns }: GalleryViewProps) => {
     ids.splice(sourceIndex, 1);
     ids.splice(targetIndex, 0, sourceId);
     const requestGeneration = ++reorderRequestGeneration.current;
-    setReorderError('');
+    setReorderError(null);
     try {
       await reorderComponents(activeLibraryId, ids);
-      if (requestGeneration === reorderRequestGeneration.current) setReorderError('');
+      if (requestGeneration === reorderRequestGeneration.current) setReorderError(null);
     } catch {
       if (requestGeneration === reorderRequestGeneration.current) {
-        setReorderError('Could not reorder components. The previous order was restored.');
+        setReorderError({
+          libraryId: activeLibraryId,
+          message: 'Could not reorder components. The previous order was restored.',
+        });
       }
     }
   }, [activeLibraryId, components, isFiltered, reorderComponents]);
@@ -366,7 +375,9 @@ export const GalleryView = ({ columns }: GalleryViewProps) => {
           <button type="button" className="button danger-action" onClick={() => void removeSelected()}>Delete selected</button>
         </div>
       )}
-      {reorderError && <div className="gallery-error" role="alert">{reorderError}</div>}
+      {reorderError?.libraryId === activeLibraryId && (
+        <div className="gallery-error" role="alert">{reorderError.message}</div>
+      )}
       {content}
     </section>
   );
