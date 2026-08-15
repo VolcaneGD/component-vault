@@ -824,6 +824,147 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .code-first-intro h3 { margin: 0 0 var(--space-1); font-size: 1.05rem; }
 .code-first-intro p { max-width: 36rem; margin: 0; color: var(--muted); line-height: 1.55; }
 
+.command-palette-trigger {
+  display: inline-flex;
+  min-height: 2.35rem;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  background: var(--surface-raised);
+}
+.command-palette-trigger:hover { color: var(--text); background: var(--surface-hover); }
+.command-palette-trigger kbd,
+.command-palette kbd {
+  padding: 0.14rem 0.35rem;
+  border: 1px solid #586382;
+  border-radius: 0.3rem;
+  color: #dce4fb;
+  background: #0b1120;
+  box-shadow: inset 0 -1px #030712;
+  font: 0.66rem/1.25 Consolas, monospace;
+}
+
+.command-palette-backdrop,
+.about-dialog-backdrop {
+  position: fixed;
+  z-index: 400;
+  inset: 0;
+  display: grid;
+  padding: clamp(1rem, 7vh, 5rem) clamp(1rem, 5vw, 4rem);
+  place-items: start center;
+  background: #02050ec7;
+  backdrop-filter: blur(0.5rem);
+}
+
+.command-palette {
+  width: min(42rem, 100%);
+  overflow: hidden;
+  border: 1px solid #6878a8;
+  border-radius: 1rem;
+  background: linear-gradient(145deg, #1b2744, #0d1426 72%);
+  box-shadow: 0 2rem 6rem #000c;
+}
+.command-palette__search {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+.command-palette__search input {
+  min-width: 0;
+  min-height: 2.8rem;
+  border: 0;
+  outline: 0;
+  color: #fff;
+  background: transparent;
+  font-size: 1rem;
+}
+.command-palette ul { display: grid; max-height: 25rem; margin: 0; padding: 0.45rem; overflow-y: auto; list-style: none; }
+.command-palette ul,
+.about-dialog__notices pre { scrollbar-color: #5d6887 #0a1020; scrollbar-width: thin; }
+.command-palette ul::-webkit-scrollbar,
+.about-dialog__notices pre::-webkit-scrollbar { width: 0.55rem; }
+.command-palette ul::-webkit-scrollbar-track,
+.about-dialog__notices pre::-webkit-scrollbar-track { background: #0a1020; }
+.command-palette ul::-webkit-scrollbar-thumb,
+.about-dialog__notices pre::-webkit-scrollbar-thumb { border: 2px solid #0a1020; border-radius: 99px; background: #5d6887; }
+.command-palette li[role="option"] {
+  display: flex;
+  min-height: 3.2rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: 0.55rem 0.75rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  cursor: pointer;
+}
+.command-palette li[role="option"] > span { display: grid; gap: 0.16rem; }
+.command-palette li[role="option"] small { color: var(--muted); font-size: 0.64rem; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; }
+.command-palette li[role="option"][aria-selected="true"] { border-color: #7065bc; background: #2c2754; }
+.command-palette li[aria-disabled="true"] { cursor: default; opacity: 0.45; }
+.command-palette__empty { padding: var(--space-4); color: var(--muted); text-align: center; }
+.command-palette__error { margin: 0; padding: 0.65rem var(--space-3); border-top: 1px solid #823f51; color: #ffc2cc; background: #321822; font-size: 0.75rem; }
+
+.undo-toast-stack {
+  position: fixed;
+  z-index: 350;
+  right: var(--space-3);
+  bottom: var(--space-3);
+  display: grid;
+  width: min(24rem, calc(100vw - 2rem));
+  gap: var(--space-1);
+}
+.undo-toast {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: 0.8rem 0.9rem;
+  border: 1px solid #675fb0;
+  border-radius: var(--radius-md);
+  color: var(--text);
+  background: #1b2440f2;
+  box-shadow: 0 1rem 3rem #0009;
+  backdrop-filter: blur(0.6rem);
+}
+.undo-toast > div { display: grid; min-width: 0; gap: 0.15rem; }
+.undo-toast span { overflow: hidden; color: var(--muted); font-size: 0.75rem; text-overflow: ellipsis; white-space: nowrap; }
+.undo-toast button { padding: 0.45rem 0.7rem; border: 1px solid #9c8eff; border-radius: var(--radius-sm); color: #fff; background: #5144a5; font-weight: 800; }
+
+.about-dialog-backdrop { place-items: center; }
+.about-dialog {
+  width: min(44rem, 100%);
+  max-height: min(48rem, calc(100vh - 2rem));
+  overflow: hidden;
+  border: 1px solid #6878a8;
+  border-radius: 1.1rem;
+  background: linear-gradient(145deg, #1a2541, #0e1528 70%);
+  box-shadow: 0 2rem 6rem #000c;
+}
+.about-dialog > header { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border); }
+.about-dialog h2 { margin: 0.2rem 0 0; font-size: 1.3rem; }
+.about-dialog__body { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--space-3); padding: var(--space-4); overflow-y: auto; }
+.about-dialog__identity { display: grid; width: 4.5rem; height: 4.5rem; place-items: center; border: 1px solid #9c8eff; border-radius: 1rem; color: #e3deff; background: #2c2754; font-size: 1.25rem; font-weight: 900; }
+.about-dialog dl { display: grid; gap: 0.45rem; margin: 0; }
+.about-dialog dl div { display: flex; justify-content: space-between; gap: var(--space-3); }
+.about-dialog dt { font-weight: 800; }
+.about-dialog dd { margin: 0; color: var(--muted); }
+.about-dialog p,
+.about-dialog > .about-dialog__body > button,
+.about-dialog__notices { grid-column: 1 / -1; }
+.about-dialog p { margin: 0; color: var(--muted); line-height: 1.55; }
+.about-dialog__notices { border: 1px solid var(--border); border-radius: var(--radius-md); background: #0a1020; }
+.about-dialog__notices summary { padding: 0.75rem; cursor: pointer; font-weight: 800; }
+.about-dialog__notices pre { max-height: 18rem; margin: 0; padding: var(--space-3); overflow: auto; border-top: 1px solid var(--border); color: #cbd5ed; font: 0.72rem/1.55 Consolas, monospace; white-space: pre-wrap; }
+
 @media (max-width: 760px) {
   body { overflow: auto; }
   .app-shell { grid-template-columns: minmax(12rem, 15rem) minmax(0, 1fr); }

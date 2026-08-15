@@ -23,14 +23,18 @@ const exportPayload = (): ExportPayload => ({
 const setup = (destination: string, canceled = false) => {
   const handlers = new Map<string, (...args: unknown[]) => unknown>();
   const clipboardWrite = vi.fn();
+  const openExternal = vi.fn().mockResolvedValue(undefined);
   const mainFrame = {};
   registerIpcHandlers({
     ipcMain: { handle: (channel, listener) => handlers.set(channel, listener as (...args: unknown[]) => unknown) },
     appVersion: () => '1.0.0',
+    electronVersion: () => '43.4.0',
+    recoverySnapshot: () => null,
     libraries: {} as never,
     settings: {} as never,
     previewSecurity: {} as never,
     clipboard: { writeText: clipboardWrite },
+    externalLinks: { openExternal },
     dialogs: { showSaveDialog: vi.fn().mockResolvedValue(canceled
       ? { canceled: true }
       : { canceled: false, filePath: destination }) },
@@ -38,11 +42,31 @@ const setup = (destination: string, canceled = false) => {
   return {
     handlers,
     clipboardWrite,
+    openExternal,
     event: { senderFrame: mainFrame, sender: { mainFrame, id: 1 } },
   };
 };
 
 describe('export IPC', () => {
+  it('opens only the attributed PropertyHTML source from the main renderer frame', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'component-vault-ipc-link-'));
+    try {
+      const { handlers, openExternal, event } = setup(join(directory, 'unused.html'));
+      await handlers.get(IPC_CHANNELS.appOpenExternal)?.(event, 'https://github.com/uni928/PropertyHTML');
+      expect(openExternal).toHaveBeenCalledWith('https://github.com/uni928/PropertyHTML');
+      await expect(handlers.get(IPC_CHANNELS.appOpenExternal)?.(
+        event,
+        'https://github.com/uni928/PropertyHTML.evil.example',
+      )).rejects.toThrow('not allowed');
+      await expect(handlers.get(IPC_CHANNELS.appOpenExternal)?.(
+        { ...event, senderFrame: {} },
+        'https://github.com/uni928/PropertyHTML',
+      )).rejects.toThrow('main renderer frame');
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   it('copies validated text only from the main renderer frame', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'component-vault-ipc-copy-'));
     try {

@@ -81,6 +81,18 @@ export interface ComponentDraft {
   previewPolicy: PreviewPolicy;
 }
 
+export interface SoftDeleteToken {
+  componentId: string;
+  deletedAt: string;
+  expiresAt: string;
+}
+
+export interface RecoverySnapshot {
+  libraryId: string;
+  componentId: string;
+  completedAt: string;
+}
+
 export interface ExportComponent {
   name: string;
   description: string;
@@ -137,12 +149,17 @@ export interface WindowState {
 
 export interface ComponentVaultApi {
   getAppVersion: () => Promise<string>;
+  getElectronVersion: () => Promise<string>;
+  getRecoverySnapshot: () => Promise<RecoverySnapshot | null>;
+  openExternal: (url: string) => Promise<void>;
   listLibraries: () => Promise<LibraryRecord[]>;
   saveLibrary: (library: LibrarySaveInput) => Promise<LibraryRecord>;
   deleteLibrary: (libraryId: string) => Promise<boolean>;
   listComponents: (libraryId: string) => Promise<ComponentRecord[]>;
   saveComponent: (component: ComponentSaveInput) => Promise<ComponentRecord>;
-  deleteComponent: (componentId: string) => Promise<boolean>;
+  deleteComponent: (componentId: string) => Promise<SoftDeleteToken | null>;
+  restoreDeletedComponent: (token: SoftDeleteToken) => Promise<ComponentRecord | null>;
+  finalizeDeletedComponent: (token: SoftDeleteToken) => Promise<boolean>;
   reorderComponents: (libraryId: string, componentIds: string[]) => Promise<void>;
   searchComponents: (libraryId: string, query: string) => Promise<ComponentRecord[]>;
   getAppSettings: () => Promise<AppSettings>;

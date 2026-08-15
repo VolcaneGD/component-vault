@@ -8,6 +8,8 @@ import {
   type ExportPayload,
   type LibrarySaveInput,
   type PreviewNetworkPolicyRequest,
+  type RecoverySnapshot,
+  type SoftDeleteToken,
 } from '../../shared/contracts';
 import { isAppSettings } from '../../shared/validation';
 import { importHtmlFiles } from '../services/importHtml';
@@ -30,10 +32,13 @@ interface IpcHandlerRegistrar {
 interface RegisterIpcDependencies {
   ipcMain: IpcHandlerRegistrar;
   appVersion: () => string;
+  electronVersion: () => string;
+  recoverySnapshot: () => RecoverySnapshot | null;
   libraries: LibraryService;
   settings: SettingsService;
   previewSecurity: PreviewSecurityController;
   clipboard: { writeText: (text: string) => void };
+  externalLinks: { openExternal: (url: string) => Promise<void> };
   dialogs: {
     showSaveDialog: (options: {
       title: string;
@@ -46,19 +51,36 @@ interface RegisterIpcDependencies {
 export const registerIpcHandlers = ({
   ipcMain,
   appVersion,
+  electronVersion,
+  recoverySnapshot,
   libraries,
   settings,
   previewSecurity,
   clipboard,
+  externalLinks,
   dialogs,
 }: RegisterIpcDependencies): void => {
   ipcMain.handle(IPC_CHANNELS.appGetVersion, () => appVersion());
+  ipcMain.handle(IPC_CHANNELS.appGetElectronVersion, () => electronVersion());
+  ipcMain.handle(IPC_CHANNELS.appGetRecoverySnapshot, () => recoverySnapshot());
+  ipcMain.handle(IPC_CHANNELS.appOpenExternal, async (event, url) => {
+    assertMainFrame(event, 'External links');
+    await externalLinks.openExternal(validateExternalUrl(url));
+  });
   ipcMain.handle(IPC_CHANNELS.libraryList, () => libraries.listLibraries());
   ipcMain.handle(IPC_CHANNELS.librarySave, (_event, input) => libraries.saveLibrary(validateLibrary(input)));
   ipcMain.handle(IPC_CHANNELS.libraryDelete, (_event, id) => libraries.deleteLibrary(validateId(id, 'library id')));
   ipcMain.handle(IPC_CHANNELS.componentList, (_event, libraryId) => libraries.listComponents(validateId(libraryId, 'library id')));
   ipcMain.handle(IPC_CHANNELS.componentSave, (_event, input) => libraries.saveComponent(validateComponent(input)));
   ipcMain.handle(IPC_CHANNELS.componentDelete, (_event, id) => libraries.deleteComponent(validateId(id, 'component id')));
+  ipcMain.handle(IPC_CHANNELS.componentRestore, (event, token) => {
+    assertMainFrame(event, 'Component restore');
+    return libraries.restoreDeletedComponent(validateSoftDeleteToken(token)) ?? null;
+  });
+  ipcMain.handle(IPC_CHANNELS.componentFinalizeDelete, (event, token) => {
+    assertMainFrame(event, 'Component delete finalization');
+    return libraries.finalizeDeletedComponent(validateSoftDeleteToken(token));
+  });
   ipcMain.handle(IPC_CHANNELS.componentReorder, (_event, libraryId, componentIds) => {
     const validLibraryId = validateId(libraryId, 'library id');
     if (!Array.isArray(componentIds)) throw new Error('Invalid component ids');
@@ -139,6 +161,26 @@ const validatePreviewId = (value: unknown): string => {
     throw new Error('Invalid preview id');
   }
   return value;
+};
+
+const validateSoftDeleteToken = (value: unknown): SoftDeleteToken => {
+  const token = record(value, 'soft delete token');
+  return {
+    componentId: validateId(token.componentId, 'component id'),
+    deletedAt: validateIsoTimestamp(token.deletedAt, 'deleted timestamp'),
+    expiresAt: validateIsoTimestamp(token.expiresAt, 'delete expiry'),
+  };
+};
+
+const validateIsoTimestamp = (value: unknown, name: string): string => {
+  if (typeof value !== 'string' || !Number.isFinite(Date.parse(value))) throw new Error(`Invalid ${name}`);
+  return value;
+};
+
+const validateExternalUrl = (value: unknown): string => {
+  const url = validateString(value, 'external URL', 500, false);
+  if (url !== 'https://github.com/uni928/PropertyHTML') throw new Error('External URL is not allowed');
+  return url;
 };
 
 const validatePreviewNetworkPolicy = (value: unknown): PreviewNetworkPolicyRequest => {

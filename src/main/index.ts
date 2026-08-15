@@ -1,8 +1,10 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, protocol, screen } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, protocol, screen, shell } from 'electron';
 import { join } from 'node:path';
 import { openDatabase, type DatabaseContext } from './database/database';
 import { registerIpcHandlers } from './ipc/registerIpc';
 import { createLibraryService } from './services/library';
+import type { LibraryService } from './services/library';
+import type { RecoverySnapshot } from '../shared/contracts';
 import { createSettingsService } from './services/settings';
 import { createPreviewSecurityController } from './security/previewSecurity';
 import { installPreviewProtocol, registerPreviewScheme } from './security/previewProtocol';
@@ -20,6 +22,9 @@ import {
 let mainWindow: ApplicationWindow | null = null;
 let windowStateController: WindowStateController | null = null;
 let databaseContext: DatabaseContext | null = null;
+let libraryService: LibraryService | null = null;
+let recoverySnapshot: RecoverySnapshot | null = null;
+let deletionCleanupTimer: NodeJS.Timeout | null = null;
 const previewSecurity = createPreviewSecurityController();
 registerPreviewScheme(protocol);
 
@@ -42,13 +47,22 @@ const createWindow = (): void => {
 app.whenReady().then(() => {
   installPreviewProtocol(protocol, join(__dirname, '../renderer/preview'));
   databaseContext = openDatabase(join(app.getPath('userData'), 'component-vault.sqlite'));
+  libraryService = createLibraryService(databaseContext);
+  recoverySnapshot = libraryService.startSession();
+  deletionCleanupTimer = setInterval(() => {
+    libraryService?.purgeExpiredDeletedComponents();
+  }, 8_000);
+  deletionCleanupTimer.unref();
   registerIpcHandlers({
     ipcMain,
     appVersion: () => app.getVersion(),
-    libraries: createLibraryService(databaseContext),
+    electronVersion: () => process.versions.electron,
+    recoverySnapshot: () => recoverySnapshot,
+    libraries: libraryService,
     settings: createSettingsService(databaseContext),
     previewSecurity,
     clipboard,
+    externalLinks: shell,
     dialogs: dialog,
   });
   createWindow();
@@ -59,11 +73,15 @@ app.whenReady().then(() => {
 });
 
 app.on('before-quit', () => {
+  if (deletionCleanupTimer) clearInterval(deletionCleanupTimer);
+  deletionCleanupTimer = null;
   if (mainWindow && windowStateController) {
     windowStateController.flush(mainWindow as unknown as ManagedWindow);
   }
+  libraryService?.markCleanShutdown();
   databaseContext?.close();
   databaseContext = null;
+  libraryService = null;
 });
 
 app.on('window-all-closed', () => {

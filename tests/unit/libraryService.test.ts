@@ -25,6 +25,41 @@ afterEach(() => {
 });
 
 describe('LibraryService', () => {
+  it('soft-deletes a component and restores it only with the matching unexpired token', () => {
+    let now = Date.parse('2026-08-15T00:00:00.000Z');
+    const service = createLibraryService(openTestDatabase(), { now: () => new Date(now) });
+    const library = service.saveLibrary({ name: 'Undo', description: '' });
+    const component = service.saveComponent(componentInput(library.id, 'Recoverable'));
+
+    const token = service.deleteComponent(component.id);
+
+    expect(token).toEqual({
+      componentId: component.id,
+      deletedAt: '2026-08-15T00:00:00.000Z',
+      expiresAt: '2026-08-15T00:00:08.000Z',
+    });
+    expect(service.listComponents(library.id)).toEqual([]);
+    now += 7_999;
+    expect(service.restoreDeletedComponent(token!)).toMatchObject({ id: component.id, deletedAt: null });
+    expect(service.listComponents(library.id)).toHaveLength(1);
+  });
+
+  it('permanently clears expired soft deletes and rejects stale restore tokens', () => {
+    let now = Date.parse('2026-08-15T00:00:00.000Z');
+    const database = openTestDatabase();
+    const service = createLibraryService(database, { now: () => new Date(now) });
+    const library = service.saveLibrary({ name: 'Cleanup', description: '' });
+    const component = service.saveComponent(componentInput(library.id, 'Expired'));
+    const token = service.deleteComponent(component.id)!;
+
+    now += 8_001;
+
+    expect(service.restoreDeletedComponent(token)).toBeUndefined();
+    expect(service.purgeExpiredDeletedComponents()).toBe(1);
+    expect(database.db.prepare('SELECT COUNT(*) AS count FROM components WHERE id = ?').get(component.id))
+      .toEqual({ count: 0 });
+  });
+
   it('stores one component with tags and preview policy atomically', () => {
     const service = createLibraryService(openTestDatabase());
     const library = service.saveLibrary({ name: 'UI Essentials', description: '' });

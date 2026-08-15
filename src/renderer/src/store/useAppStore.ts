@@ -5,8 +5,15 @@ import {
   type ComponentRecord,
   type ComponentSaveInput,
   type LibraryRecord,
+  type SoftDeleteToken,
   type ViewMode,
 } from '../../../shared/contracts';
+
+export interface PendingDeletion {
+  token: SoftDeleteToken;
+  component: ComponentRecord;
+  previousIndex: number;
+}
 
 interface AppStore {
   settings: AppSettings;
@@ -21,6 +28,7 @@ interface AppStore {
   selectedTags: string[];
   isHydrated: boolean;
   mutationVersion: number;
+  pendingDeletions: PendingDeletion[];
   hydrate: () => Promise<void>;
   setViewMode: (viewMode: ViewMode) => void;
   setSelectedLibraryId: (libraryId: string | null) => void;
@@ -40,6 +48,8 @@ interface AppStore {
   saveComponent: (component: ComponentSaveInput) => Promise<ComponentRecord>;
   duplicateComponent: (component: ComponentRecord) => Promise<ComponentRecord>;
   deleteComponent: (componentId: string) => Promise<void>;
+  undoDelete: (token: SoftDeleteToken) => Promise<void>;
+  expireDeletion: (token: SoftDeleteToken) => Promise<void>;
   updateLayout: (patch: Partial<AppSettings>) => void;
 }
 
@@ -55,6 +65,17 @@ const reorderLatestGenerations = new Map<string, number>();
 const reorderConfirmedOrders = new Map<string, string[]>();
 const draftOperationTails = new Map<string, Promise<ComponentRecord>>();
 const cancelledDraftIds = new Set<string>();
+
+const isSoftDeleteToken = (value: unknown): value is SoftDeleteToken => {
+  if (!value || typeof value !== 'object') return false;
+  const token = value as Partial<SoftDeleteToken>;
+  return typeof token.componentId === 'string'
+    && typeof token.deletedAt === 'string'
+    && typeof token.expiresAt === 'string';
+};
+
+const sameDeleteToken = (left: SoftDeleteToken, right: SoftDeleteToken): boolean =>
+  left.componentId === right.componentId && left.deletedAt === right.deletedAt;
 
 const mutationGeneration = (componentId: string): number =>
   componentMutationGenerations.get(componentId) ?? 0;
@@ -147,6 +168,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   selectedTags: [],
   isHydrated: false,
   mutationVersion: 0,
+  pendingDeletions: [],
   hydrate: async () => {
     const api = window.componentVault;
     if (!api) {
@@ -162,13 +184,21 @@ export const useAppStore = create<AppStore>((set, get) => ({
       ?? Promise.resolve(defaultAppSettings());
     const librariesPromise = api.listLibraries?.().catch(() => [])
       ?? Promise.resolve([]);
-    const [settings, libraries] = await Promise.all([settingsPromise, librariesPromise]);
+    const recoveryPromise = api.getRecoverySnapshot?.().catch(() => null)
+      ?? Promise.resolve(null);
+    const [settings, libraries, recovery] = await Promise.all([
+      settingsPromise, librariesPromise, recoveryPromise,
+    ]);
+    const recoveredLibraryId = recovery
+      && libraries.some((library) => library.id === recovery.libraryId)
+      ? recovery.libraryId
+      : null;
     set((state) => state.mutationVersion === hydrationVersion
       ? {
         settings,
         libraries,
-        selectedLibraryId: settings.lastLibraryId,
-        selectedComponentId: settings.lastComponentId,
+        selectedLibraryId: recoveredLibraryId ?? settings.lastLibraryId,
+        selectedComponentId: recoveredLibraryId ? recovery!.componentId : settings.lastComponentId,
         draftOrigins: {},
         isHydrated: true,
       }
@@ -518,6 +548,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
     componentMutationGenerations.set(componentId, mutationGeneration(componentId) + 1);
     try {
       await enqueueComponentOperation(componentId, async () => {
+        const liveBeforeDelete = get().components.find((component) => component.id === componentId);
+        const previousIndex = get().components.findIndex((component) => component.id === componentId);
+        if (!liveBeforeDelete) throw new Error('Component could not be deleted because it is closed');
         const deleted = await window.componentVault.deleteComponent(componentId);
         if (!deleted) throw new Error('Component could not be deleted');
         set((state) => {
@@ -532,6 +565,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
             components,
             selectedComponentId,
             selectedComponentIds: state.selectedComponentIds.filter((id) => id !== componentId),
+            pendingDeletions: isSoftDeleteToken(deleted)
+              ? [
+                ...state.pendingDeletions.filter((pending) => pending.component.id !== componentId),
+                { token: deleted, component: liveBeforeDelete, previousIndex },
+              ]
+              : state.pendingDeletions,
             draftOrigins: removeDraftOrigins(
               state.draftOrigins,
               (savedId, originId) => savedId === componentId || originId === componentId,
@@ -541,6 +580,41 @@ export const useAppStore = create<AppStore>((set, get) => ({
       });
     } finally {
       deletingComponentIds.delete(componentId);
+    }
+  },
+  undoDelete: async (token) => {
+    const pending = get().pendingDeletions.find((item) => sameDeleteToken(item.token, token));
+    if (!pending) return;
+    deletingComponentIds.add(token.componentId);
+    try {
+      const restored = await enqueueComponentOperation(token.componentId, () =>
+        window.componentVault.restoreDeletedComponent(token));
+      set((state) => {
+        const pendingDeletions = state.pendingDeletions.filter((item) => !sameDeleteToken(item.token, token));
+        if (!restored || state.componentsLibraryId !== restored.libraryId
+          || state.components.some((component) => component.id === restored.id)) {
+          return { pendingDeletions };
+        }
+        const components = [...state.components];
+        components.splice(Math.min(pending.previousIndex, components.length), 0, restored);
+        persist({ lastComponentId: restored.id });
+        return {
+          pendingDeletions,
+          components,
+          selectedComponentId: restored.id,
+        };
+      });
+    } finally {
+      deletingComponentIds.delete(token.componentId);
+    }
+  },
+  expireDeletion: async (token) => {
+    try {
+      await window.componentVault.finalizeDeletedComponent(token);
+    } finally {
+      set((state) => ({
+        pendingDeletions: state.pendingDeletions.filter((item) => !sameDeleteToken(item.token, token)),
+      }));
     }
   },
   updateLayout: (patch) => {

@@ -6,6 +6,8 @@ import {
   LibraryRecord,
   LibrarySaveInput,
   PreviewPolicy,
+  RecoverySnapshot,
+  SoftDeleteToken,
 } from '../../shared/contracts';
 import type { DatabaseContext } from '../database/database';
 
@@ -16,9 +18,18 @@ export interface LibraryService {
   listComponents: (libraryId: string) => ComponentRecord[];
   getComponent: (componentId: string) => ComponentRecord | undefined;
   saveComponent: (component: ComponentSaveInput) => ComponentRecord;
-  deleteComponent: (componentId: string) => boolean;
+  deleteComponent: (componentId: string) => SoftDeleteToken | null;
+  restoreDeletedComponent: (token: SoftDeleteToken) => ComponentRecord | undefined;
+  finalizeDeletedComponent: (token: SoftDeleteToken) => boolean;
+  purgeExpiredDeletedComponents: () => number;
   reorderComponents: (libraryId: string, componentIds: string[]) => void;
   searchComponents: (libraryId: string, query: string) => ComponentRecord[];
+  startSession: () => RecoverySnapshot | null;
+  markCleanShutdown: () => void;
+}
+
+interface LibraryServiceOptions {
+  now?: () => Date;
 }
 
 type LibraryRow = {
@@ -34,21 +45,32 @@ type PolicyRow = {
   external_network_enabled: number; allowed_origins: string;
 };
 
-export const createLibraryService = ({ db }: DatabaseContext): LibraryService => {
+interface RecoverySessionState {
+  active: boolean;
+  lastCompleted: RecoverySnapshot | null;
+}
+
+const DELETE_UNDO_WINDOW_MS = 8_000;
+const RECOVERY_SESSION_KEY = 'recovery-session';
+
+export const createLibraryService = (
+  { db }: DatabaseContext,
+  { now = () => new Date() }: LibraryServiceOptions = {},
+): LibraryService => {
   const listLibraries = (): LibraryRecord[] => db.prepare(
     'SELECT * FROM libraries ORDER BY created_at ASC, id ASC',
   ).all().map(toLibrary);
 
   const saveLibrary = (library: LibrarySaveInput): LibraryRecord => {
-    const now = new Date().toISOString();
+    const savedAt = now().toISOString();
     const id = library.id ?? randomUUID();
     const existing = db.prepare('SELECT id FROM libraries WHERE id = ?').get(id);
     if (existing) {
       db.prepare('UPDATE libraries SET name = ?, description = ?, updated_at = ? WHERE id = ?')
-        .run(library.name, library.description, now, id);
+        .run(library.name, library.description, savedAt, id);
     } else {
       db.prepare('INSERT INTO libraries (id, name, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?)')
-        .run(id, library.name, library.description, now, now);
+        .run(id, library.name, library.description, savedAt, savedAt);
     }
     return toLibrary(db.prepare('SELECT * FROM libraries WHERE id = ?').get(id));
   };
@@ -69,20 +91,20 @@ export const createLibraryService = ({ db }: DatabaseContext): LibraryService =>
 
   const saveComponent = db.transaction((component: ComponentSaveInput): ComponentRecord => {
     if (!isPreviewPolicy(component.previewPolicy)) throw new Error('Invalid preview policy');
-    const now = new Date().toISOString();
+    const savedAt = now().toISOString();
     const id = component.id ?? randomUUID();
     const existing = db.prepare('SELECT id FROM components WHERE id = ?').get(id);
     if (existing) {
       db.prepare(`UPDATE components SET library_id = ?, name = ?, description = ?, category = ?, html = ?, css = ?, javascript = ?, source_type = ?, original_file_name = ?, updated_at = ?, deleted_at = NULL WHERE id = ?`)
         .run(component.libraryId, component.name, component.description, component.category, component.html,
-          component.css, component.javascript, component.sourceType, component.originalFileName, now, id);
+          component.css, component.javascript, component.sourceType, component.originalFileName, savedAt, id);
     } else {
       const nextOrder = (db.prepare(
         'SELECT COALESCE(MAX(sort_order), -1) + 1 AS next_order FROM components WHERE library_id = ?',
       ).get(component.libraryId) as { next_order: number }).next_order;
       db.prepare(`INSERT INTO components (id, library_id, name, description, category, html, css, javascript, source_type, original_file_name, sort_order, created_at, updated_at, deleted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`)
         .run(id, component.libraryId, component.name, component.description, component.category, component.html,
-          component.css, component.javascript, component.sourceType, component.originalFileName, nextOrder, now, now);
+          component.css, component.javascript, component.sourceType, component.originalFileName, nextOrder, savedAt, savedAt);
     }
 
     db.prepare('DELETE FROM component_tags WHERE component_id = ?').run(id);
@@ -103,11 +125,50 @@ export const createLibraryService = ({ db }: DatabaseContext): LibraryService =>
       .run(id, asInteger(policy.allowScripts), asInteger(policy.allowForms), asInteger(policy.allowPopups),
         asInteger(policy.externalNetworkEnabled ?? false), JSON.stringify(policy.allowedOrigins));
 
+    const recovery = readRecoverySession(db);
+    if (recovery?.active) {
+      writeRecoverySession(db, {
+        active: true,
+        lastCompleted: { libraryId: component.libraryId, componentId: id, completedAt: savedAt },
+      });
+    }
+
     return readComponent(db, db.prepare('SELECT * FROM components WHERE id = ?').get(id) as ComponentRow);
   });
 
-  const deleteComponent = (componentId: string): boolean =>
-    db.prepare('DELETE FROM components WHERE id = ?').run(componentId).changes > 0;
+  const deleteComponent = (componentId: string): SoftDeleteToken | null => {
+    const deletedAt = now().toISOString();
+    const result = db.prepare(
+      'UPDATE components SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL',
+    ).run(deletedAt, componentId);
+    return result.changes > 0
+      ? {
+        componentId,
+        deletedAt,
+        expiresAt: new Date(Date.parse(deletedAt) + DELETE_UNDO_WINDOW_MS).toISOString(),
+      }
+      : null;
+  };
+
+  const restoreDeletedComponent = (token: SoftDeleteToken): ComponentRecord | undefined => {
+    if (!isAuthenticDeleteToken(token) || now().getTime() >= Date.parse(token.expiresAt)) return undefined;
+    const restored = db.prepare(
+      'UPDATE components SET deleted_at = NULL WHERE id = ? AND deleted_at = ?',
+    ).run(token.componentId, token.deletedAt);
+    return restored.changes > 0 ? getComponent(token.componentId) : undefined;
+  };
+
+  const finalizeDeletedComponent = (token: SoftDeleteToken): boolean => {
+    if (!isAuthenticDeleteToken(token) || now().getTime() < Date.parse(token.expiresAt)) return false;
+    return db.prepare('DELETE FROM components WHERE id = ? AND deleted_at = ?')
+      .run(token.componentId, token.deletedAt).changes > 0;
+  };
+
+  const purgeExpiredDeletedComponents = (): number => {
+    const cutoff = new Date(now().getTime() - DELETE_UNDO_WINDOW_MS).toISOString();
+    return db.prepare('DELETE FROM components WHERE deleted_at IS NOT NULL AND deleted_at <= ?')
+      .run(cutoff).changes;
+  };
 
   const reorderComponents = db.transaction((libraryId: string, componentIds: string[]): void => {
     const actualIds = db.prepare(
@@ -134,7 +195,54 @@ export const createLibraryService = ({ db }: DatabaseContext): LibraryService =>
       .map(row => readComponent(db, row as ComponentRow));
   };
 
-  return { listLibraries, saveLibrary, deleteLibrary, listComponents, getComponent, saveComponent, deleteComponent, reorderComponents, searchComponents };
+  const startSession = (): RecoverySnapshot | null => {
+    purgeExpiredDeletedComponents();
+    const previous = readRecoverySession(db);
+    const candidate = previous?.active && previous.lastCompleted
+      && getComponent(previous.lastCompleted.componentId)
+      ? previous.lastCompleted
+      : null;
+    writeRecoverySession(db, { active: true, lastCompleted: previous?.lastCompleted ?? null });
+    return candidate;
+  };
+
+  const markCleanShutdown = (): void => {
+    const current = readRecoverySession(db);
+    writeRecoverySession(db, { active: false, lastCompleted: current?.lastCompleted ?? null });
+  };
+
+  return {
+    listLibraries, saveLibrary, deleteLibrary, listComponents, getComponent, saveComponent,
+    deleteComponent, restoreDeletedComponent, finalizeDeletedComponent, purgeExpiredDeletedComponents,
+    reorderComponents, searchComponents, startSession, markCleanShutdown,
+  };
+};
+
+const isAuthenticDeleteToken = (token: SoftDeleteToken): boolean => {
+  const deletedAt = Date.parse(token.deletedAt);
+  const expiresAt = Date.parse(token.expiresAt);
+  return Number.isFinite(deletedAt)
+    && Number.isFinite(expiresAt)
+    && expiresAt === deletedAt + DELETE_UNDO_WINDOW_MS;
+};
+
+const readRecoverySession = (db: DatabaseContext['db']): RecoverySessionState | null => {
+  const row = db.prepare('SELECT value FROM app_settings WHERE key = ?').get(RECOVERY_SESSION_KEY) as
+    | { value: string }
+    | undefined;
+  if (!row) return null;
+  try {
+    const value = JSON.parse(row.value) as RecoverySessionState;
+    return typeof value.active === 'boolean' ? value : null;
+  } catch {
+    return null;
+  }
+};
+
+const writeRecoverySession = (db: DatabaseContext['db'], state: RecoverySessionState): void => {
+  db.prepare(`INSERT INTO app_settings (key, value) VALUES (?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
+    .run(RECOVERY_SESSION_KEY, JSON.stringify(state));
 };
 
 const toLibrary = (row: unknown): LibraryRecord => {
