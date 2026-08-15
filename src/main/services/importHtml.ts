@@ -1,5 +1,6 @@
 import { readFileSync, statSync } from 'node:fs';
 import { basename, extname } from 'node:path';
+import chardet from 'chardet';
 import iconv from 'iconv-lite';
 import type {
   ComponentDraft,
@@ -23,9 +24,10 @@ export const decodeHtml = (bytes: Buffer): { text: string; encoding: 'utf-8' | '
     return { text: bytes.toString('utf8'), encoding: 'utf-8' };
   }
 
-  return hasValidUtf8(bytes)
-    ? { text: bytes.toString('utf8'), encoding: 'utf-8' }
-    : { text: iconv.decode(bytes, 'shift_jis'), encoding: 'shift_jis' };
+  const encoding = detectFallbackEncoding(bytes);
+  return encoding === 'utf-8'
+    ? { text: bytes.toString('utf8'), encoding }
+    : { text: iconv.decode(bytes, 'shift_jis'), encoding };
 };
 
 export const normalizeHtmlImport = (fileName: string, text: string): ComponentDraft => {
@@ -99,6 +101,41 @@ const hasValidUtf8 = (bytes: Buffer): boolean => {
   }
 };
 
+const detectFallbackEncoding = (bytes: Buffer): 'utf-8' | 'shift_jis' => {
+  const matches = chardet.analyse(bytes);
+  const utf8Confidence = detectorConfidence(matches, 'UTF-8');
+  const shiftJisConfidence = detectorConfidence(matches, 'Shift_JIS');
+
+  if (shiftJisConfidence >= 50) return 'shift_jis';
+  if (utf8Confidence >= 90) return 'utf-8';
+
+  // Some Shift_JIS pairs are also legal UTF-8. With no strong UTF-8 signal,
+  // retain a detector-recognized Japanese byte pair instead of corrupting it.
+  if (shiftJisConfidence > 0 && hasShiftJisEvidence(bytes)) return 'shift_jis';
+  if (utf8Confidence > shiftJisConfidence) return 'utf-8';
+  if (shiftJisConfidence > 0) return 'shift_jis';
+  return hasValidUtf8(bytes) ? 'utf-8' : 'shift_jis';
+};
+
+const detectorConfidence = (
+  matches: Array<{ confidence: number; name: string }>,
+  encoding: string,
+): number => matches.find(match => match.name === encoding)?.confidence ?? 0;
+
+const hasShiftJisEvidence = (bytes: Buffer): boolean => {
+  for (let index = 0; index < bytes.length - 1; index += 1) {
+    const lead = bytes[index];
+    const trail = bytes[index + 1];
+    const doubleByte = ((lead >= 0x81 && lead <= 0x9f) || (lead >= 0xe0 && lead <= 0xfc)) &&
+      ((trail >= 0x40 && trail <= 0x7e) || (trail >= 0x80 && trail <= 0xfc));
+    const halfWidthKana = lead >= 0xa1 && lead <= 0xdf && trail >= 0xa1 && trail <= 0xdf;
+    if (doubleByte || halfWidthKana) {
+      return true;
+    }
+  }
+  return false;
+};
+
 const extractBody = (text: string): string => /<body\b[^>]*>([\s\S]*?)<\/body\s*>/i.exec(text)?.[1] ?? text;
 
 const styleContents = (blocks: HtmlBlock[]): string => blocks
@@ -133,22 +170,44 @@ const extractBlocks = (text: string, tag: 'style' | 'script'): HtmlBlock[] => {
 };
 
 const extractTopLevelBlocks = (text: string, tag: 'style' | 'script'): { blocks: HtmlBlock[]; ranges: Array<[number, number]> } => {
-  const blocks = extractBlocks(text, tag).filter(block => nestingDepthAt(text, block.start) === 0);
+  const blocks = scanTopLevelRawTextBlocks(text, tag);
   return { blocks, ranges: blocks.map(block => [block.start, block.end]) };
 };
 
-const nestingDepthAt = (text: string, end: number): number => {
+const scanTopLevelRawTextBlocks = (text: string, wantedTag: 'style' | 'script'): HtmlBlock[] => {
   const tokens = /<!--[\s\S]*?-->|<\/?([a-z][\w:-]*)(?:\s[^<>]*?)?\s*\/?\s*>/gi;
   const voidElements = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr']);
+  const rawTextTags = new Set(['script', 'style']);
+  const blocks: HtmlBlock[] = [];
   let depth = 0;
-  for (const token of text.slice(0, end).matchAll(tokens)) {
+  for (let token = tokens.exec(text); token; token = tokens.exec(text)) {
     const raw = token[0];
     const tag = token[1]?.toLowerCase();
     if (!tag || raw.startsWith('<!--') || voidElements.has(tag) || raw.endsWith('/>')) continue;
-    if (raw.startsWith('</')) depth = Math.max(0, depth - 1);
-    else depth += 1;
+    if (raw.startsWith('</')) {
+      depth = Math.max(0, depth - 1);
+      continue;
+    }
+
+    if (rawTextTags.has(tag)) {
+      const closing = new RegExp(`<\\/${tag}\\s*>`, 'gi');
+      closing.lastIndex = tokens.lastIndex;
+      const close = closing.exec(text);
+      if (tag === wantedTag && depth === 0 && close) {
+        blocks.push({
+          attributes: raw.slice(tag.length + 1, -1).replace(/\/\s*$/, ''),
+          content: text.slice(tokens.lastIndex, close.index),
+          start: token.index,
+          end: close.index + close[0].length,
+        });
+      }
+      tokens.lastIndex = close ? close.index + close[0].length : text.length;
+      continue;
+    }
+
+    depth += 1;
   }
-  return depth;
+  return blocks;
 };
 
 const removeBlocks = (text: string, tags: Array<'style' | 'script'>): string =>

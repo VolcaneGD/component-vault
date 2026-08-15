@@ -23,6 +23,7 @@
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
     "better-sqlite3": "^13.0.3",
+    "chardet": "^2.2.0",
     "iconv-lite": "^0.7.3",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",

@@ -20,6 +20,19 @@ describe('HTML import', () => {
     });
   });
 
+  it('detects undeclared Shift_JIS bytes that are also valid UTF-8 syntax', () => {
+    const bytes = Buffer.concat([
+      Buffer.from('<!doctype html><html><body><p>'),
+      Buffer.from([0xc2, 0xa9]),
+      Buffer.from('</p></body></html>'),
+    ]);
+
+    expect(decodeHtml(bytes)).toEqual({
+      encoding: 'shift_jis',
+      text: '<!doctype html><html><body><p>ﾂｩ</p></body></html>',
+    });
+  });
+
   it('derives a component name from title, then h1, then filename', () => {
     expect(normalizeHtmlImport('fallback.html', '<title>Card</title><div>Body</div>').name).toBe('Card');
     expect(normalizeHtmlImport('fallback.html', '<h1>Upload</h1>').name).toBe('Upload');
@@ -42,6 +55,19 @@ describe('HTML import', () => {
       html: '<section class="notice">Saved</section>\n\n\n',
       css: '.notice { color: green; }',
       javascript: 'window.noticeReady = true;',
+    });
+  });
+
+  it('does not treat tags inside a top-level script as fragment markup', () => {
+    const draft = normalizeHtmlImport(
+      'raw-text.html',
+      "<script>const x = '<div>';</script><style>.banner { color: red; }</style><div>OK</div>",
+    );
+
+    expect(draft).toMatchObject({
+      html: '<div>OK</div>',
+      css: '.banner { color: red; }',
+      javascript: "const x = '<div>';",
     });
   });
 
