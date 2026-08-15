@@ -1,0 +1,128 @@
+import type { IpcMainInvokeEvent } from 'electron';
+import {
+  isPreviewPolicy,
+  type AppSettings,
+  type ComponentSaveInput,
+  type LibrarySaveInput,
+} from '../../shared/contracts';
+import { isAppSettings } from '../../shared/validation';
+import type { LibraryService } from '../services/library';
+import type { SettingsService } from '../services/settings';
+
+export const IPC_CHANNELS = {
+  appGetVersion: 'app:get-version',
+  libraryList: 'library:list',
+  librarySave: 'library:save',
+  libraryDelete: 'library:delete',
+  componentList: 'component:list',
+  componentSave: 'component:save',
+  componentDelete: 'component:delete',
+  componentReorder: 'component:reorder',
+  componentSearch: 'component:search',
+  settingsGet: 'settings:get',
+  settingsUpdate: 'settings:update',
+} as const;
+
+interface IpcHandlerRegistrar {
+  handle: (channel: string, listener: (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown) => void;
+}
+
+interface RegisterIpcDependencies {
+  ipcMain: IpcHandlerRegistrar;
+  appVersion: () => string;
+  libraries: LibraryService;
+  settings: SettingsService;
+}
+
+export const registerIpcHandlers = ({ ipcMain, appVersion, libraries, settings }: RegisterIpcDependencies): void => {
+  ipcMain.handle(IPC_CHANNELS.appGetVersion, () => appVersion());
+  ipcMain.handle(IPC_CHANNELS.libraryList, () => libraries.listLibraries());
+  ipcMain.handle(IPC_CHANNELS.librarySave, (_event, input) => libraries.saveLibrary(validateLibrary(input)));
+  ipcMain.handle(IPC_CHANNELS.libraryDelete, (_event, id) => libraries.deleteLibrary(validateId(id, 'library id')));
+  ipcMain.handle(IPC_CHANNELS.componentList, (_event, libraryId) => libraries.listComponents(validateId(libraryId, 'library id')));
+  ipcMain.handle(IPC_CHANNELS.componentSave, (_event, input) => libraries.saveComponent(validateComponent(input)));
+  ipcMain.handle(IPC_CHANNELS.componentDelete, (_event, id) => libraries.deleteComponent(validateId(id, 'component id')));
+  ipcMain.handle(IPC_CHANNELS.componentReorder, (_event, libraryId, componentIds) => {
+    const validLibraryId = validateId(libraryId, 'library id');
+    if (!Array.isArray(componentIds)) throw new Error('Invalid component ids');
+    libraries.reorderComponents(validLibraryId, componentIds.map(id => validateId(id, 'component id')));
+  });
+  ipcMain.handle(IPC_CHANNELS.componentSearch, (_event, libraryId, query) =>
+    libraries.searchComponents(validateId(libraryId, 'library id'), validateString(query, 'query', 500)));
+  ipcMain.handle(IPC_CHANNELS.settingsGet, () => settings.getAppSettings());
+  ipcMain.handle(IPC_CHANNELS.settingsUpdate, (_event, patch) => settings.saveAppSettings(validateSettingsPatch(patch)));
+};
+
+const validateLibrary = (value: unknown): LibrarySaveInput => {
+  const input = record(value, 'library');
+  return {
+    ...(input.id === undefined ? {} : { id: validateId(input.id, 'library id') }),
+    name: validateString(input.name, 'library name', 255, false),
+    description: validateString(input.description, 'library description', 10_000),
+  };
+};
+
+const validateComponent = (value: unknown): ComponentSaveInput => {
+  const input = record(value, 'component');
+  if (!Array.isArray(input.tags) || !input.tags.every(tag => isStringWithin(tag, 100))) {
+    throw new Error('Invalid component tags');
+  }
+  if (!isPreviewPolicy(input.previewPolicy)) throw new Error('Invalid preview policy');
+  if (input.originalFileName !== null && !isStringWithin(input.originalFileName, 255)) {
+    throw new Error('Invalid original filename');
+  }
+  return {
+    ...(input.id === undefined ? {} : { id: validateId(input.id, 'component id') }),
+    libraryId: validateId(input.libraryId, 'library id'),
+    name: validateString(input.name, 'component name', 255, false),
+    description: validateString(input.description, 'component description', 10_000),
+    category: validateString(input.category, 'component category', 255),
+    html: validateString(input.html, 'component HTML', 2_000_000),
+    css: validateString(input.css, 'component CSS', 2_000_000),
+    javascript: validateString(input.javascript, 'component JavaScript', 2_000_000),
+    sourceType: validateString(input.sourceType, 'component source type', 64, false),
+    originalFileName: input.originalFileName as string | null,
+    tags: input.tags as string[],
+    previewPolicy: input.previewPolicy,
+  };
+};
+
+const validateSettingsPatch = (value: unknown): Partial<AppSettings> => {
+  const patch = record(value, 'settings');
+  const allowedKeys = new Set([
+    'viewMode', 'galleryColumns', 'editorPreviewRatio', 'studioPaneRatios', 'lastLibraryId', 'lastComponentId',
+  ]);
+  if (Object.keys(patch).some(key => !allowedKeys.has(key))) throw new Error('Unknown application setting');
+  const candidate = { ...defaultSettingsForValidation, ...patch };
+  if (!isAppSettings(candidate)) throw new Error('Invalid application settings');
+  if (patch.lastLibraryId !== undefined && patch.lastLibraryId !== null) validateId(patch.lastLibraryId, 'last library id');
+  if (patch.lastComponentId !== undefined && patch.lastComponentId !== null) validateId(patch.lastComponentId, 'last component id');
+  return patch as Partial<AppSettings>;
+};
+
+const defaultSettingsForValidation: AppSettings = {
+  viewMode: 'workbench', galleryColumns: 3, editorPreviewRatio: 0.55,
+  studioPaneRatios: [0.24, 0.42, 0.34], lastLibraryId: null, lastComponentId: null,
+};
+
+const record = (value: unknown, name: string): Record<string, unknown> => {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error(`Invalid ${name}`);
+  return value as Record<string, unknown>;
+};
+
+const validateId = (value: unknown, name: string): string => {
+  if (typeof value !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) {
+    throw new Error(`Invalid ${name}`);
+  }
+  return value;
+};
+
+const validateString = (value: unknown, name: string, maximum: number, allowEmpty = true): string => {
+  if (!isStringWithin(value, maximum) || (!allowEmpty && value.trim().length === 0)) {
+    throw new Error(`Invalid ${name}`);
+  }
+  return value;
+};
+
+const isStringWithin = (value: unknown, maximum: number): value is string =>
+  typeof value === 'string' && value.length <= maximum;

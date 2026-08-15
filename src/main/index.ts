@@ -1,5 +1,9 @@
 import { app, BrowserWindow, ipcMain, screen } from 'electron';
 import { join } from 'node:path';
+import { openDatabase, type DatabaseContext } from './database/database';
+import { registerIpcHandlers } from './ipc/registerIpc';
+import { createLibraryService } from './services/library';
+import { createSettingsService } from './services/settings';
 import {
   createApplicationWindow,
   type ApplicationWindow,
@@ -13,6 +17,7 @@ import {
 
 let mainWindow: ApplicationWindow | null = null;
 let windowStateController: WindowStateController | null = null;
+let databaseContext: DatabaseContext | null = null;
 
 const createWindow = (): void => {
   windowStateController = new WindowStateController({
@@ -30,7 +35,13 @@ const createWindow = (): void => {
 };
 
 app.whenReady().then(() => {
-  ipcMain.handle('app:get-version', () => app.getVersion());
+  databaseContext = openDatabase(join(app.getPath('userData'), 'component-vault.sqlite'));
+  registerIpcHandlers({
+    ipcMain,
+    appVersion: () => app.getVersion(),
+    libraries: createLibraryService(databaseContext),
+    settings: createSettingsService(databaseContext),
+  });
   createWindow();
 
   app.on('activate', () => {
@@ -42,6 +53,8 @@ app.on('before-quit', () => {
   if (mainWindow && windowStateController) {
     windowStateController.flush(mainWindow as unknown as ManagedWindow);
   }
+  databaseContext?.close();
+  databaseContext = null;
 });
 
 app.on('window-all-closed', () => {

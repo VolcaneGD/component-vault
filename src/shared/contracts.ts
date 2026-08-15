@@ -5,12 +5,17 @@ export interface ComponentRecord {
   libraryId: string;
   name: string;
   description: string;
+  category: string;
   tags: string[];
   html: string;
   css: string;
   javascript: string;
+  sourceType: string;
+  originalFileName: string | null;
+  previewPolicy: PreviewPolicy;
   createdAt: string;
   updatedAt: string;
+  deletedAt: string | null;
 }
 
 export interface LibraryRecord {
@@ -25,7 +30,29 @@ export interface PreviewPolicy {
   allowScripts: boolean;
   allowForms: boolean;
   allowPopups: boolean;
+  externalNetworkEnabled?: boolean;
   allowedOrigins: string[];
+}
+
+export interface LibrarySaveInput {
+  id?: string;
+  name: string;
+  description: string;
+}
+
+export interface ComponentSaveInput {
+  id?: string;
+  libraryId: string;
+  name: string;
+  description: string;
+  category: string;
+  html: string;
+  css: string;
+  javascript: string;
+  sourceType: string;
+  originalFileName: string | null;
+  tags: string[];
+  previewPolicy: PreviewPolicy;
 }
 
 export interface AppSettings {
@@ -48,6 +75,16 @@ export interface WindowState {
 
 export interface ComponentVaultApi {
   getAppVersion: () => Promise<string>;
+  listLibraries: () => Promise<LibraryRecord[]>;
+  saveLibrary: (library: LibrarySaveInput) => Promise<LibraryRecord>;
+  deleteLibrary: (libraryId: string) => Promise<boolean>;
+  listComponents: (libraryId: string) => Promise<ComponentRecord[]>;
+  saveComponent: (component: ComponentSaveInput) => Promise<ComponentRecord>;
+  deleteComponent: (componentId: string) => Promise<boolean>;
+  reorderComponents: (libraryId: string, componentIds: string[]) => Promise<void>;
+  searchComponents: (libraryId: string, query: string) => Promise<ComponentRecord[]>;
+  getAppSettings: () => Promise<AppSettings>;
+  saveAppSettings: (patch: Partial<AppSettings>) => Promise<AppSettings>;
 }
 
 export const defaultAppSettings = (): AppSettings => ({
@@ -81,6 +118,8 @@ export const isPreviewPolicy = (value: unknown): value is PreviewPolicy => {
     typeof policy.allowScripts === 'boolean' &&
     typeof policy.allowForms === 'boolean' &&
     typeof policy.allowPopups === 'boolean' &&
+    (policy.externalNetworkEnabled === undefined ||
+      typeof policy.externalNetworkEnabled === 'boolean') &&
     Array.isArray(policy.allowedOrigins) &&
     policy.allowedOrigins.every(isHttpsOrigin)
   );
