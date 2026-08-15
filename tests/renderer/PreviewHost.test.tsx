@@ -1,10 +1,38 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { ComponentRecord } from '../../src/shared/contracts';
-import { PREVIEW_CHANNEL } from '../../src/renderer/src/features/preview/buildPreviewDocument';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { ComponentRecord, PreviewPolicy } from '../../src/shared/contracts';
+import {
+  PREVIEW_EVENT_CHANNEL,
+  PREVIEW_READY_CHANNEL,
+} from '../../src/renderer/src/features/preview/previewProtocol';
 import { PreviewHost } from '../../src/renderer/src/features/preview/PreviewHost';
 
-afterEach(cleanup);
+const configurePreviewNetwork = vi.fn().mockResolvedValue(undefined);
+let blockedRequestListener: ((event: {
+  previewId: string;
+  url: string;
+  origin: string;
+}) => void) | undefined;
+
+beforeEach(() => {
+  configurePreviewNetwork.mockClear();
+  blockedRequestListener = undefined;
+  Object.defineProperty(window, 'componentVault', {
+    configurable: true,
+    value: {
+      configurePreviewNetwork,
+      onPreviewRequestBlocked: (listener: typeof blockedRequestListener) => {
+        blockedRequestListener = listener;
+        return () => { blockedRequestListener = undefined; };
+      },
+    },
+  });
+});
+
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
 const component = (overrides: Partial<ComponentRecord> = {}): ComponentRecord => ({
   id: 'component-1',
@@ -31,95 +59,208 @@ const component = (overrides: Partial<ComponentRecord> = {}): ComponentRecord =>
   ...overrides,
 });
 
-const previewIdFrom = (iframe: HTMLIFrameElement): string => {
-  const match = iframe.srcdoc.match(/const previewId = "([A-Za-z0-9_-]+)"/);
-  if (!match) throw new Error('Preview ID not found in srcdoc');
-  return match[1];
-};
+const previewIdFrom = (iframe: HTMLIFrameElement): string => new URL(iframe.src).hash.slice(1);
+
+const dispatchPreviewMessage = (
+  iframe: HTMLIFrameElement,
+  data: Record<string, unknown>,
+  source: MessageEventSource | null = iframe.contentWindow,
+) => fireEvent(window, new MessageEvent('message', { source, data }));
 
 const dispatchPreviewError = (
   iframe: HTMLIFrameElement,
-  previewId: string,
-  source: MessageEventSource | null,
   error: Record<string, unknown> = { type: 'runtime', message: 'Preview failed' },
-) => {
-  fireEvent(window, new MessageEvent('message', {
-    source,
-    data: { channel: PREVIEW_CHANNEL, previewId, error },
-  }));
+  overrides: Record<string, unknown> = {},
+) => dispatchPreviewMessage(iframe, {
+  channel: PREVIEW_EVENT_CHANNEL,
+  previewId: previewIdFrom(iframe),
+  error,
+  ...overrides,
+});
+
+const readyPreview = async (iframe: HTMLIFrameElement) => {
+  const postMessage = vi.spyOn(iframe.contentWindow!, 'postMessage');
+  dispatchPreviewMessage(iframe, {
+    channel: PREVIEW_READY_CHANNEL,
+    previewId: previewIdFrom(iframe),
+  });
+  await waitFor(() => expect(postMessage).toHaveBeenCalledWith(expect.objectContaining({
+    channel: 'component-vault:preview:init',
+    previewId: previewIdFrom(iframe),
+  }), '*'));
+  return postMessage;
 };
 
 describe('PreviewHost', () => {
-  it('uses a restricted sandbox without same-origin, popup, navigation, or download privileges', () => {
+  it('loads the static child with the restricted opaque-origin sandbox', () => {
     render(<PreviewHost component={component()} />);
 
     const iframe = screen.getByTitle('Component preview');
     expect(iframe).toHaveAttribute('sandbox', 'allow-scripts allow-forms allow-modals');
+    expect(iframe).not.toHaveAttribute('srcdoc');
     expect(iframe).not.toHaveAttribute('allow');
+    expect(iframe).toHaveAttribute(
+      'src',
+      expect.stringMatching(/^component-vault-preview:\/\/sandbox\/preview\.html#[A-Za-z0-9_-]+$/),
+    );
   });
 
-  it('ignores a forged parent-window message even when its preview ID matches', () => {
+  it('sends code only after authenticated readiness and preserves source plus ID validation', async () => {
     render(<PreviewHost component={component()} />);
     const iframe = screen.getByTitle('Component preview') as HTMLIFrameElement;
+    const postMessage = vi.spyOn(iframe.contentWindow!, 'postMessage');
 
-    dispatchPreviewError(iframe, previewIdFrom(iframe), window);
+    dispatchPreviewMessage(iframe, {
+      channel: PREVIEW_READY_CHANNEL,
+      previewId: previewIdFrom(iframe),
+    }, window);
+    dispatchPreviewMessage(iframe, {
+      channel: PREVIEW_READY_CHANNEL,
+      previewId: 'wrong-id',
+    });
+    expect(postMessage).not.toHaveBeenCalled();
 
-    expect(screen.queryByText('Preview failed')).not.toBeInTheDocument();
-  });
-
-  it('ignores a message from the iframe when its preview ID does not match', () => {
-    render(<PreviewHost component={component()} />);
-    const iframe = screen.getByTitle('Component preview') as HTMLIFrameElement;
-
-    dispatchPreviewError(iframe, 'different-preview-id', iframe.contentWindow);
-
-    expect(screen.queryByText('Preview failed')).not.toBeInTheDocument();
-  });
-
-  it('shows serialized iframe errors with location and supports clear and reload', () => {
-    render(<PreviewHost component={component()} />);
-    const iframe = screen.getByTitle('Component preview') as HTMLIFrameElement;
-    const initialDocument = iframe.srcdoc;
-
-    dispatchPreviewError(iframe, previewIdFrom(iframe), iframe.contentWindow, {
-      type: 'runtime',
-      message: 'Cannot read properties of null',
-      line: 12,
-      column: 7,
+    await readyPreview(iframe);
+    expect(configurePreviewNetwork).toHaveBeenCalledWith({
+      previewId: previewIdFrom(iframe),
+      allowedOrigins: [],
     });
 
-    expect(screen.getByText('Runtime')).toBeInTheDocument();
-    expect(screen.getByText('Cannot read properties of null')).toBeInTheDocument();
-    expect(screen.getByText('Line 12, column 7')).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Clear errors' }));
-    expect(screen.queryByText('Cannot read properties of null')).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Reload preview' }));
-    expect(iframe.srcdoc).not.toBe(initialDocument);
+    dispatchPreviewError(iframe, { type: 'runtime', message: 'Forged' }, { previewId: 'wrong-id' });
+    dispatchPreviewMessage(iframe, {
+      channel: PREVIEW_EVENT_CHANNEL,
+      previewId: previewIdFrom(iframe),
+      error: { type: 'runtime', message: 'Forged' },
+    }, window);
+    expect(screen.queryByText('Forged')).not.toBeInTheDocument();
   });
 
-  it('offers to add a blocked HTTPS origin to the preview policy', () => {
-    const onPreviewPolicyChange = vi.fn();
-    render(
-      <PreviewHost
-        component={component()}
-        onPreviewPolicyChange={onPreviewPolicyChange}
-      />,
-    );
+  it('does not offer or grant a blocked origin without a persistence callback', async () => {
+    render(<PreviewHost component={component()} />);
     const iframe = screen.getByTitle('Component preview') as HTMLIFrameElement;
+    await readyPreview(iframe);
 
-    dispatchPreviewError(iframe, previewIdFrom(iframe), iframe.contentWindow, {
+    dispatchPreviewError(iframe, {
       type: 'csp',
-      message: 'Blocked by Content Security Policy: img-src',
+      message: 'Blocked image',
       blockedOrigin: 'https://images.example.com',
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Allow https://images.example.com' }));
 
-    expect(onPreviewPolicyChange).toHaveBeenCalledWith(expect.objectContaining({
-      externalNetworkEnabled: true,
+    expect(screen.queryByRole('button', { name: 'Allow https://images.example.com' })).not.toBeInTheDocument();
+    expect(configurePreviewNetwork).not.toHaveBeenCalledWith(expect.objectContaining({
       allowedOrigins: ['https://images.example.com'],
     }));
-    expect(iframe.srcdoc).toContain('https://images.example.com');
+  });
+
+  it('does not grant a blocked origin when persistence fails', async () => {
+    const persist = vi.fn().mockRejectedValue(new Error('disk unavailable'));
+    render(<PreviewHost component={component()} onPreviewPolicyChange={persist} />);
+    const iframe = screen.getByTitle('Component preview') as HTMLIFrameElement;
+    await readyPreview(iframe);
+    dispatchPreviewError(iframe, {
+      type: 'csp', message: 'Blocked image', blockedOrigin: 'https://images.example.com',
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Allow https://images.example.com' }));
+
+    expect(await screen.findByText('Could not save preview policy: disk unavailable')).toBeInTheDocument();
+    expect(configurePreviewNetwork).not.toHaveBeenCalledWith(expect.objectContaining({
+      allowedOrigins: ['https://images.example.com'],
+    }));
+  });
+
+  it('turns a matching Main Process request cancellation into blocked-origin guidance', () => {
+    const persist = vi.fn().mockResolvedValue(component().previewPolicy);
+    render(<PreviewHost component={component()} onPreviewPolicyChange={persist} />);
+    const iframe = screen.getByTitle('Component preview') as HTMLIFrameElement;
+
+    act(() => {
+      blockedRequestListener?.({
+        previewId: previewIdFrom(iframe),
+        url: 'https://images.example.com/large-photo.png',
+        origin: 'https://images.example.com',
+      });
+    });
+
+    expect(screen.getByText('Blocked external preview resource')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Allow https://images.example.com' })).toBeInTheDocument();
+  });
+
+  it('activates only the authoritative policy returned after persistence', async () => {
+    const savedPolicy: PreviewPolicy = {
+      allowScripts: true,
+      allowForms: false,
+      allowPopups: false,
+      externalNetworkEnabled: true,
+      allowedOrigins: ['https://images.example.com'],
+    };
+    const persist = vi.fn().mockResolvedValue(savedPolicy);
+    render(<PreviewHost component={component()} onPreviewPolicyChange={persist} />);
+    let iframe = screen.getByTitle('Component preview') as HTMLIFrameElement;
+    await readyPreview(iframe);
+    dispatchPreviewError(iframe, {
+      type: 'csp', message: 'Blocked image', blockedOrigin: 'https://images.example.com',
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Allow https://images.example.com' }));
+    await waitFor(() => expect(persist).toHaveBeenCalled());
+    iframe = screen.getByTitle('Component preview') as HTMLIFrameElement;
+    await readyPreview(iframe);
+
+    expect(configurePreviewNetwork).toHaveBeenLastCalledWith(expect.objectContaining({
+      allowedOrigins: ['https://images.example.com'],
+    }));
+  });
+
+  it('uses updated props and never reuses a previous component policy during a switch', async () => {
+    const first = component({
+      previewPolicy: {
+        allowScripts: true,
+        allowForms: false,
+        allowPopups: false,
+        externalNetworkEnabled: true,
+        allowedOrigins: ['https://first.example.com'],
+      },
+    });
+    const { rerender } = render(<PreviewHost component={first} />);
+    await readyPreview(screen.getByTitle('Component preview') as HTMLIFrameElement);
+
+    rerender(<PreviewHost component={component({ id: 'component-2', updatedAt: first.updatedAt })} />);
+    const secondFrame = screen.getByTitle('Component preview') as HTMLIFrameElement;
+    await readyPreview(secondFrame);
+
+    expect(configurePreviewNetwork).toHaveBeenLastCalledWith(expect.objectContaining({
+      allowedOrigins: [],
+    }));
+  });
+
+  it('creates a fresh static child when live component code changes', () => {
+    const { rerender } = render(<PreviewHost component={component()} />);
+    const firstSource = (screen.getByTitle('Component preview') as HTMLIFrameElement).src;
+
+    rerender(<PreviewHost component={component({ html: '<p>Updated live</p>' })} />);
+
+    expect((screen.getByTitle('Component preview') as HTMLIFrameElement).src).not.toBe(firstSource);
+  });
+
+  it('rate-limits error bursts and retains a fixed maximum error list', () => {
+    vi.useFakeTimers();
+    render(<PreviewHost component={component()} />);
+    const iframe = screen.getByTitle('Component preview') as HTMLIFrameElement;
+
+    for (let index = 0; index < 25; index += 1) {
+      dispatchPreviewError(iframe, { type: 'runtime', message: `Burst ${index}` });
+    }
+    expect(screen.getAllByRole('listitem')).toHaveLength(20);
+
+    vi.advanceTimersByTime(1_001);
+    for (let index = 0; index < 20; index += 1) {
+      dispatchPreviewError(iframe, { type: 'runtime', message: `Second ${index}` });
+    }
+    vi.advanceTimersByTime(1_001);
+    for (let index = 0; index < 20; index += 1) {
+      dispatchPreviewError(iframe, { type: 'runtime', message: `Third ${index}` });
+    }
+    expect(screen.getAllByRole('listitem')).toHaveLength(50);
   });
 });

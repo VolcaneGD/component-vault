@@ -1,5 +1,10 @@
 import { join } from 'node:path';
 import type { BrowserWindowConstructorOptions } from 'electron';
+import type {
+  PreviewSecurityController,
+  PreviewWebContents,
+} from './security/previewSecurity';
+import { PREVIEW_DOCUMENT_URL } from './security/previewProtocol';
 
 export interface ApplicationWindow {
   webContents: {
@@ -18,12 +23,14 @@ export interface CreateApplicationWindowOptions {
   BrowserWindow: ApplicationWindowConstructor;
   runtimeDirectory: string;
   rendererUrl?: string;
+  previewSecurity?: PreviewSecurityController;
 }
 
 export const createApplicationWindow = ({
   BrowserWindow,
   runtimeDirectory,
   rendererUrl,
+  previewSecurity,
 }: CreateApplicationWindowOptions): ApplicationWindow => {
   const applicationWindow = new BrowserWindow({
     width: 1440,
@@ -41,6 +48,10 @@ export const createApplicationWindow = ({
 
   applicationWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   applicationWindow.webContents.on('will-navigate', event => event.preventDefault());
+  previewSecurity?.attach(
+    applicationWindow.webContents as unknown as PreviewWebContents,
+    PREVIEW_DOCUMENT_URL,
+  );
 
   if (rendererUrl) {
     void applicationWindow.loadURL(rendererUrl);

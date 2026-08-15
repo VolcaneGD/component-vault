@@ -1,15 +1,18 @@
 import type { IpcMainInvokeEvent } from 'electron';
 import {
   isPreviewPolicy,
+  isHttpsOrigin,
   type AppSettings,
   type ComponentSaveInput,
   type HtmlImportOptions,
   type LibrarySaveInput,
+  type PreviewNetworkPolicyRequest,
 } from '../../shared/contracts';
 import { isAppSettings } from '../../shared/validation';
 import { importHtmlFiles } from '../services/importHtml';
 import type { LibraryService } from '../services/library';
 import type { SettingsService } from '../services/settings';
+import type { PreviewSecurityController } from '../security/previewSecurity';
 
 export const IPC_CHANNELS = {
   appGetVersion: 'app:get-version',
@@ -24,6 +27,7 @@ export const IPC_CHANNELS = {
   settingsGet: 'settings:get',
   settingsUpdate: 'settings:update',
   componentImportHtml: 'component:import-html',
+  previewConfigureNetwork: 'preview:configure-network',
 } as const;
 
 interface IpcHandlerRegistrar {
@@ -35,9 +39,16 @@ interface RegisterIpcDependencies {
   appVersion: () => string;
   libraries: LibraryService;
   settings: SettingsService;
+  previewSecurity: PreviewSecurityController;
 }
 
-export const registerIpcHandlers = ({ ipcMain, appVersion, libraries, settings }: RegisterIpcDependencies): void => {
+export const registerIpcHandlers = ({
+  ipcMain,
+  appVersion,
+  libraries,
+  settings,
+  previewSecurity,
+}: RegisterIpcDependencies): void => {
   ipcMain.handle(IPC_CHANNELS.appGetVersion, () => appVersion());
   ipcMain.handle(IPC_CHANNELS.libraryList, () => libraries.listLibraries());
   ipcMain.handle(IPC_CHANNELS.librarySave, (_event, input) => libraries.saveLibrary(validateLibrary(input)));
@@ -56,6 +67,26 @@ export const registerIpcHandlers = ({ ipcMain, appVersion, libraries, settings }
   ipcMain.handle(IPC_CHANNELS.settingsUpdate, (_event, patch) => settings.saveAppSettings(validateSettingsPatch(patch)));
   ipcMain.handle(IPC_CHANNELS.componentImportHtml, (_event, paths, options) =>
     importHtmlFiles(validateImportPaths(paths), validateImportOptions(options)));
+  ipcMain.handle(IPC_CHANNELS.previewConfigureNetwork, (event, request) => {
+    if (event.senderFrame !== event.sender.mainFrame) {
+      throw new Error('Preview network policy must come from the main renderer frame');
+    }
+    previewSecurity.configure(event.sender.id, validatePreviewNetworkPolicy(request));
+  });
+};
+
+const validatePreviewNetworkPolicy = (value: unknown): PreviewNetworkPolicyRequest => {
+  const input = record(value, 'preview network policy');
+  if (typeof input.previewId !== 'string' || !/^[A-Za-z0-9_-]+$/.test(input.previewId)
+    || !Array.isArray(input.allowedOrigins)
+    || input.allowedOrigins.length > 64
+    || !input.allowedOrigins.every(isHttpsOrigin)) {
+    throw new Error('Invalid preview network policy');
+  }
+  return {
+    previewId: input.previewId,
+    allowedOrigins: [...new Set(input.allowedOrigins)],
+  };
 };
 
 const validateLibrary = (value: unknown): LibrarySaveInput => {

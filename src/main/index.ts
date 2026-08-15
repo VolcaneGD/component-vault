@@ -1,9 +1,11 @@
-import { app, BrowserWindow, ipcMain, screen } from 'electron';
+import { app, BrowserWindow, ipcMain, protocol, screen } from 'electron';
 import { join } from 'node:path';
 import { openDatabase, type DatabaseContext } from './database/database';
 import { registerIpcHandlers } from './ipc/registerIpc';
 import { createLibraryService } from './services/library';
 import { createSettingsService } from './services/settings';
+import { createPreviewSecurityController } from './security/previewSecurity';
+import { installPreviewProtocol, registerPreviewScheme } from './security/previewProtocol';
 import {
   createApplicationWindow,
   type ApplicationWindow,
@@ -18,6 +20,8 @@ import {
 let mainWindow: ApplicationWindow | null = null;
 let windowStateController: WindowStateController | null = null;
 let databaseContext: DatabaseContext | null = null;
+const previewSecurity = createPreviewSecurityController();
+registerPreviewScheme(protocol);
 
 const createWindow = (): void => {
   windowStateController = new WindowStateController({
@@ -30,17 +34,20 @@ const createWindow = (): void => {
     BrowserWindow: BrowserWindow as unknown as ApplicationWindowConstructor,
     runtimeDirectory: __dirname,
     rendererUrl: process.env.ELECTRON_RENDERER_URL,
+    previewSecurity,
   });
   windowStateController.track(mainWindow as unknown as ManagedWindow);
 };
 
 app.whenReady().then(() => {
+  installPreviewProtocol(protocol, join(__dirname, '../renderer/preview'));
   databaseContext = openDatabase(join(app.getPath('userData'), 'component-vault.sqlite'));
   registerIpcHandlers({
     ipcMain,
     appVersion: () => app.getVersion(),
     libraries: createLibraryService(databaseContext),
     settings: createSettingsService(databaseContext),
+    previewSecurity,
   });
   createWindow();
 

@@ -1,5 +1,5 @@
 export interface PreviewError {
-  type: 'runtime' | 'unhandled-rejection' | 'csp' | 'bootstrap';
+  type: 'runtime' | 'unhandled-rejection' | 'csp' | 'bootstrap' | 'policy';
   message: string;
   line?: number;
   column?: number;
@@ -21,6 +21,7 @@ const errorTypeLabel: Record<PreviewError['type'], string> = {
   'unhandled-rejection': 'Promise rejection',
   csp: 'Content Security Policy',
   bootstrap: 'Preview bootstrap',
+  policy: 'Preview policy',
 };
 
 const errorLocation = (error: PreviewError): string | null => {

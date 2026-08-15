@@ -34,6 +34,19 @@ export interface PreviewPolicy {
   allowedOrigins: string[];
 }
 
+export interface PreviewNetworkPolicyRequest {
+  previewId: string;
+  allowedOrigins: string[];
+}
+
+export interface PreviewBlockedRequest {
+  previewId: string;
+  url: string;
+  origin: string;
+}
+
+export const PREVIEW_REQUEST_BLOCKED_CHANNEL = 'preview:request-blocked';
+
 export interface LibrarySaveInput {
   id?: string;
   name: string;
@@ -107,6 +120,8 @@ export interface ComponentVaultApi {
   getAppSettings: () => Promise<AppSettings>;
   saveAppSettings: (patch: Partial<AppSettings>) => Promise<AppSettings>;
   importHtmlFiles: (paths: string[], options?: HtmlImportOptions) => Promise<ImportResult[]>;
+  configurePreviewNetwork: (request: PreviewNetworkPolicyRequest) => Promise<void>;
+  onPreviewRequestBlocked: (listener: (event: PreviewBlockedRequest) => void) => () => void;
 }
 
 export const defaultAppSettings = (): AppSettings => ({
@@ -121,7 +136,7 @@ export const defaultAppSettings = (): AppSettings => ({
 export const isViewMode = (value: unknown): value is ViewMode =>
   value === 'workbench' || value === 'gallery' || value === 'studio';
 
-const isHttpsOrigin = (value: unknown): value is string => {
+export const isHttpsOrigin = (value: unknown): value is string => {
   if (typeof value !== 'string') return false;
 
   try {

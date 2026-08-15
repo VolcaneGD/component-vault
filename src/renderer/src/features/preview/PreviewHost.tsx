@@ -1,56 +1,40 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { ComponentRecord, PreviewPolicy } from '../../../../shared/contracts';
+import {
+  isPreviewPolicy,
+  type ComponentRecord,
+  type PreviewPolicy,
+} from '../../../../shared/contracts';
 import { ErrorConsole, type PreviewError } from '../feedback/ErrorConsole';
-import { buildPreviewDocument, PREVIEW_CHANNEL } from './buildPreviewDocument';
+import {
+  isPreviewReadyMessage,
+  MAX_PREVIEW_ERRORS,
+  MAX_PREVIEW_ERRORS_PER_SECOND,
+  normalizePreviewError,
+  PREVIEW_EVENT_CHANNEL,
+  previewPayload,
+  previewPolicyKey,
+} from './previewProtocol';
 
 interface PreviewHostProps {
   component: ComponentRecord;
-  onPreviewPolicyChange?: (policy: PreviewPolicy) => void;
+  onPreviewPolicyChange?: (policy: PreviewPolicy) => Promise<PreviewPolicy>;
 }
 
-interface PreviewMessage {
-  channel: typeof PREVIEW_CHANNEL;
-  previewId: string;
-  error: PreviewError;
+interface AuthoritativePolicy {
+  componentId: string;
+  basePolicyKey: string;
+  policy: PreviewPolicy;
+}
+
+interface ComponentErrors {
+  componentId: string;
+  items: PreviewError[];
 }
 
 const createPreviewId = (): string => {
   const bytes = new Uint8Array(16);
   globalThis.crypto.getRandomValues(bytes);
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
-};
-
-const isOptionalNumber = (value: unknown): value is number | undefined => (
-  value === undefined || (typeof value === 'number' && Number.isFinite(value))
-);
-
-const isOptionalString = (value: unknown): value is string | undefined => (
-  value === undefined || typeof value === 'string'
-);
-
-const isPreviewError = (value: unknown): value is PreviewError => {
-  if (typeof value !== 'object' || value === null) return false;
-
-  const error = value as Record<string, unknown>;
-  return (
-    ['runtime', 'unhandled-rejection', 'csp', 'bootstrap'].includes(String(error.type))
-    && typeof error.message === 'string'
-    && isOptionalNumber(error.line)
-    && isOptionalNumber(error.column)
-    && isOptionalString(error.stack)
-    && isOptionalString(error.blockedUri)
-    && isOptionalString(error.blockedOrigin)
-    && isOptionalString(error.directive)
-  );
-};
-
-const isPreviewMessage = (value: unknown): value is PreviewMessage => {
-  if (typeof value !== 'object' || value === null) return false;
-
-  const message = value as Record<string, unknown>;
-  return message.channel === PREVIEW_CHANNEL
-    && typeof message.previewId === 'string'
-    && isPreviewError(message.error);
 };
 
 const isCanonicalHttpsOrigin = (value: string): boolean => {
@@ -62,74 +46,174 @@ const isCanonicalHttpsOrigin = (value: string): boolean => {
   }
 };
 
+const policyFailure = (error: unknown): PreviewError => ({
+  type: 'policy',
+  message: `Could not save preview policy: ${error instanceof Error ? error.message : String(error)}`,
+});
+
 export const PreviewHost = ({ component, onPreviewPolicyChange }: PreviewHostProps) => {
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const [previewId, setPreviewId] = useState(createPreviewId);
-  const [errors, setErrors] = useState<PreviewError[]>([]);
-  const [previewPolicy, setPreviewPolicy] = useState(component.previewPolicy);
+  const rateWindow = useRef<number[]>([]);
+  const currentComponent = useRef({ id: component.id, policyKey: previewPolicyKey(component.previewPolicy) });
+  const [reloadRevision, setReloadRevision] = useState(0);
+  const [authoritativePolicy, setAuthoritativePolicy] = useState<AuthoritativePolicy | null>(null);
+  const [componentErrors, setComponentErrors] = useState<ComponentErrors>({
+    componentId: component.id,
+    items: [],
+  });
 
-  useEffect(() => {
-    setPreviewPolicy(component.previewPolicy);
-    setErrors([]);
-    setPreviewId(createPreviewId());
-  }, [component.id, component.updatedAt, component.previewPolicy]);
-
-  const previewComponent = useMemo(() => ({
-    ...component,
-    previewPolicy,
-  }), [component, previewPolicy]);
-  const srcDoc = useMemo(
-    () => buildPreviewDocument(previewComponent, previewId),
-    [previewComponent, previewId],
+  const basePolicyKey = previewPolicyKey(component.previewPolicy);
+  currentComponent.current = { id: component.id, policyKey: basePolicyKey };
+  const effectivePolicy = authoritativePolicy?.componentId === component.id
+    && authoritativePolicy.basePolicyKey === basePolicyKey
+    ? authoritativePolicy.policy
+    : component.previewPolicy;
+  const effectivePolicyKey = previewPolicyKey(effectivePolicy);
+  const previewId = useMemo(
+    createPreviewId,
+    [
+      component.id,
+      component.updatedAt,
+      component.html,
+      component.css,
+      component.javascript,
+      basePolicyKey,
+      effectivePolicyKey,
+      reloadRevision,
+    ],
   );
-
-  useEffect(() => {
-    const receivePreviewMessage = (event: MessageEvent<unknown>) => {
-      if (event.source !== iframeRef.current?.contentWindow) return;
-      if (!isPreviewMessage(event.data) || event.data.previewId !== previewId) return;
-
-      const { error } = event.data;
-      setErrors((current) => [...current, error]);
-    };
-
-    window.addEventListener('message', receivePreviewMessage);
-    return () => window.removeEventListener('message', receivePreviewMessage);
+  const frameSource = useMemo(() => {
+    return `component-vault-preview://sandbox/preview.html#${previewId}`;
   }, [previewId]);
+  const errors = componentErrors.componentId === component.id ? componentErrors.items : [];
 
-  const reload = useCallback(() => {
-    setErrors([]);
-    setPreviewId(createPreviewId());
+  const appendError = useCallback((error: PreviewError) => {
+    setComponentErrors((current) => {
+      const items = current.componentId === component.id ? current.items : [];
+      return {
+        componentId: component.id,
+        items: [...items, error].slice(-MAX_PREVIEW_ERRORS),
+      };
+    });
+  }, [component.id]);
+
+  const acceptPreviewError = useCallback((error: PreviewError) => {
+    const now = Date.now();
+    rateWindow.current = rateWindow.current.filter((timestamp) => now - timestamp < 1_000);
+    if (rateWindow.current.length >= MAX_PREVIEW_ERRORS_PER_SECOND) return;
+    rateWindow.current.push(now);
+    appendError(error);
+  }, [appendError]);
+
+  const activatePreview = useCallback(async () => {
+    const frameWindow = iframeRef.current?.contentWindow;
+    if (!frameWindow) return;
+    const expectedId = previewId;
+    try {
+      await window.componentVault?.configurePreviewNetwork?.({
+        previewId,
+        allowedOrigins: effectivePolicy.externalNetworkEnabled
+          ? effectivePolicy.allowedOrigins
+          : [],
+      });
+      if (iframeRef.current?.contentWindow !== frameWindow || expectedId !== previewId) return;
+      frameWindow.postMessage({
+        ...previewPayload(component, effectivePolicy),
+        previewId,
+      }, '*');
+    } catch (error) {
+      appendError({
+        type: 'bootstrap',
+        message: `Could not configure preview security: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    }
+  }, [appendError, component, effectivePolicy, previewId]);
+
+  const receivePreviewMessage = useCallback((event: MessageEvent<unknown>) => {
+    if (event.source !== iframeRef.current?.contentWindow) return;
+    if (isPreviewReadyMessage(event.data)) {
+      if (event.data.previewId === previewId) void activatePreview();
+      return;
+    }
+    if (typeof event.data !== 'object' || event.data === null) return;
+    const message = event.data as Record<string, unknown>;
+    if (message.channel !== PREVIEW_EVENT_CHANNEL || message.previewId !== previewId) return;
+    const error = normalizePreviewError(message.error);
+    if (!error) return;
+
+    acceptPreviewError(error);
+  }, [acceptPreviewError, activatePreview, previewId]);
+
+  const messageListenerRef = useRef(receivePreviewMessage);
+  messageListenerRef.current = receivePreviewMessage;
+  useEffect(() => {
+    const listener = (event: MessageEvent<unknown>) => messageListenerRef.current(event);
+    window.addEventListener('message', listener);
+    return () => window.removeEventListener('message', listener);
   }, []);
 
-  const allowOrigin = useCallback((origin: string) => {
-    if (!isCanonicalHttpsOrigin(origin) || previewPolicy.allowedOrigins.includes(origin)) return;
+  useEffect(() => window.componentVault?.onPreviewRequestBlocked?.((event) => {
+    if (event.previewId !== previewId) return;
+    const error = normalizePreviewError({
+      type: 'csp',
+      message: 'Blocked external preview resource',
+      blockedUri: event.url,
+      blockedOrigin: event.origin,
+      directive: 'main-process-request-policy',
+    });
+    if (error) acceptPreviewError(error);
+  }), [acceptPreviewError, previewId]);
 
-    const nextPolicy: PreviewPolicy = {
-      ...previewPolicy,
+  const reload = useCallback(() => {
+    rateWindow.current = [];
+    setComponentErrors({ componentId: component.id, items: [] });
+    setReloadRevision((revision) => revision + 1);
+  }, [component.id]);
+
+  const allowOrigin = useCallback(async (origin: string) => {
+    if (!onPreviewPolicyChange
+      || !isCanonicalHttpsOrigin(origin)
+      || effectivePolicy.allowedOrigins.includes(origin)) return;
+
+    const request: PreviewPolicy = {
+      ...effectivePolicy,
       externalNetworkEnabled: true,
-      allowedOrigins: [...previewPolicy.allowedOrigins, origin],
+      allowedOrigins: [...effectivePolicy.allowedOrigins, origin],
     };
-    setPreviewPolicy(nextPolicy);
-    setErrors([]);
-    setPreviewId(createPreviewId());
-    onPreviewPolicyChange?.(nextPolicy);
-  }, [onPreviewPolicyChange, previewPolicy]);
+    const requestContext = { ...currentComponent.current };
+    try {
+      const savedPolicy = await onPreviewPolicyChange(request);
+      if (!isPreviewPolicy(savedPolicy)) throw new Error('persistence returned an invalid policy');
+      if (currentComponent.current.id !== requestContext.id
+        || currentComponent.current.policyKey !== requestContext.policyKey) return;
+      setAuthoritativePolicy({
+        componentId: requestContext.id,
+        basePolicyKey: requestContext.policyKey,
+        policy: savedPolicy,
+      });
+      rateWindow.current = [];
+      setComponentErrors({ componentId: component.id, items: [] });
+    } catch (error) {
+      appendError(policyFailure(error));
+    }
+  }, [appendError, component.id, effectivePolicy, onPreviewPolicyChange]);
 
   return (
     <section className="preview-host" aria-label="Live component preview">
       <iframe
+        key={previewId}
         ref={iframeRef}
         className="preview-host__frame"
         title="Component preview"
         sandbox="allow-scripts allow-forms allow-modals"
         referrerPolicy="no-referrer"
-        srcDoc={srcDoc}
+        src={frameSource}
       />
       <ErrorConsole
         errors={errors}
-        onClear={() => setErrors([])}
+        onClear={() => setComponentErrors({ componentId: component.id, items: [] })}
         onReload={reload}
-        onAllowOrigin={allowOrigin}
+        onAllowOrigin={onPreviewPolicyChange ? allowOrigin : undefined}
       />
     </section>
   );

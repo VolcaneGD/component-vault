@@ -1,5 +1,9 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { ComponentVaultApi } from '../shared/contracts';
+import {
+  PREVIEW_REQUEST_BLOCKED_CHANNEL,
+  type ComponentVaultApi,
+  type PreviewBlockedRequest,
+} from '../shared/contracts';
 import { IPC_CHANNELS } from '../main/ipc/registerIpc';
 
 const componentVaultApi: ComponentVaultApi = {
@@ -15,6 +19,12 @@ const componentVaultApi: ComponentVaultApi = {
   getAppSettings: () => ipcRenderer.invoke(IPC_CHANNELS.settingsGet),
   saveAppSettings: patch => ipcRenderer.invoke(IPC_CHANNELS.settingsUpdate, patch),
   importHtmlFiles: (paths, options) => ipcRenderer.invoke(IPC_CHANNELS.componentImportHtml, paths, options),
+  configurePreviewNetwork: request => ipcRenderer.invoke(IPC_CHANNELS.previewConfigureNetwork, request),
+  onPreviewRequestBlocked: listener => {
+    const receiveBlockedRequest = (_event: Electron.IpcRendererEvent, event: PreviewBlockedRequest) => listener(event);
+    ipcRenderer.on(PREVIEW_REQUEST_BLOCKED_CHANNEL, receiveBlockedRequest);
+    return () => ipcRenderer.removeListener(PREVIEW_REQUEST_BLOCKED_CHANNEL, receiveBlockedRequest);
+  },
 };
 
 contextBridge.exposeInMainWorld('componentVault', componentVaultApi);
