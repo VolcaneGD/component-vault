@@ -64,6 +64,17 @@ export const ComponentEditor = ({
   onChangeRef.current = onChange;
   onSaveRef.current = onSave;
 
+  const flushDirtySnapshot = () => {
+    if (!dirtyRef.current) return;
+    if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+    timerRef.current = null;
+    dirtyRef.current = false;
+    const snapshot = draftRef.current;
+    const save = onSaveRef.current
+      ?? ((input: ComponentSaveInput) => window.componentVault.saveComponent(input));
+    void save(toSaveInput(snapshot)).catch(() => undefined);
+  };
+
   useEffect(() => {
     const incomingPolicy = JSON.stringify(component.previewPolicy);
     if (componentIdRef.current === component.id) {
@@ -74,6 +85,7 @@ export const ComponentEditor = ({
       setDraft(merged);
       return;
     }
+    flushDirtySnapshot();
     componentIdRef.current = component.id;
     incomingPolicyRef.current = incomingPolicy;
     draftRef.current = component;
@@ -86,12 +98,10 @@ export const ComponentEditor = ({
     setSaveState('saved');
   }, [component]);
 
-  useEffect(() => () => {
-    if (timerRef.current !== null) window.clearTimeout(timerRef.current);
-  }, []);
+  useEffect(() => () => flushDirtySnapshot(), []);
 
-  const persistDraft = useCallback(async () => {
-    if (!dirtyRef.current) return;
+  const persistDraft = useCallback(async (force = false) => {
+    if (!dirtyRef.current && !force) return;
     if (timerRef.current !== null) window.clearTimeout(timerRef.current);
     timerRef.current = null;
     const snapshot = draftRef.current;
@@ -168,7 +178,7 @@ export const ComponentEditor = ({
       onKeyDown={(event) => {
         if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
           event.preventDefault();
-          void persistDraft();
+          void persistDraft(true);
         }
       }}
     >
@@ -188,7 +198,7 @@ export const ComponentEditor = ({
           </span>
         </div>
         <div className="component-editor__actions">
-          <button type="button" className="button button--primary" onClick={() => void persistDraft()}>
+          <button type="button" className="button button--primary" onClick={() => void persistDraft(true)}>
             Save component
           </button>
           <div className="component-editor__action-menu">
@@ -270,7 +280,7 @@ export const ComponentEditor = ({
         css={draft.css}
         javascript={draft.javascript}
         onChange={updateCode}
-        onSave={() => void persistDraft()}
+        onSave={() => void persistDraft(true)}
       />
     </section>
   );

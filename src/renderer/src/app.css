@@ -572,7 +572,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.gallery-card__heading mark { padding: 0.05rem 0.1rem; border-radius: 0.2rem; color: #17102d; background: #d3cbff; }
+.gallery-card mark { padding: 0.05rem 0.1rem; border-radius: 0.2rem; color: #17102d; background: #d3cbff; }
+.gallery-card__category { color: var(--accent); font-size: 0.68rem; font-weight: 750; letter-spacing: 0.04em; text-transform: uppercase; }
 .gallery-card__body p { margin: 0; overflow: hidden; color: var(--muted); font-size: 0.76rem; line-height: 1.45; text-overflow: ellipsis; white-space: nowrap; }
 .gallery-card__tags { display: flex; min-width: 0; flex-wrap: wrap; gap: 0.35rem; }
 .gallery-card__tags span { padding: 0.18rem 0.42rem; border-radius: 99px; color: #c9d4f0; background: #253253; font-size: 0.66rem; }

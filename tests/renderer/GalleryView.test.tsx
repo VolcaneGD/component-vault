@@ -53,6 +53,11 @@ const records = [
 const saveAppSettings = vi.fn().mockResolvedValue(defaultAppSettings());
 const reorderComponents = vi.fn().mockResolvedValue(undefined);
 const deleteComponent = vi.fn().mockResolvedValue(true);
+const saveComponentApi = vi.fn(async (input) => ({
+  ...(records.find((item) => item.id === input.id) ?? records[0]),
+  ...input,
+  updatedAt: '2026-08-15T00:00:01.000Z',
+} as ComponentRecord));
 
 const resetStore = (components = records) => useAppStore.setState({
   settings: defaultAppSettings(),
@@ -72,6 +77,12 @@ beforeEach(() => {
   saveAppSettings.mockClear();
   reorderComponents.mockClear();
   deleteComponent.mockClear();
+  saveComponentApi.mockClear();
+  saveComponentApi.mockImplementation(async (input) => ({
+    ...(records.find((item) => item.id === input.id) ?? records[0]),
+    ...input,
+    updatedAt: '2026-08-15T00:00:01.000Z',
+  } as ComponentRecord));
   resetStore();
   Object.defineProperty(window, 'componentVault', {
     configurable: true,
@@ -79,6 +90,7 @@ beforeEach(() => {
       saveAppSettings,
       reorderComponents,
       deleteComponent,
+      saveComponent: saveComponentApi,
       configurePreviewNetwork: vi.fn().mockResolvedValue(undefined),
       releasePreviewNetwork: vi.fn().mockResolvedValue(undefined),
       onPreviewRequestBlocked: vi.fn(() => () => undefined),
@@ -124,8 +136,36 @@ describe('GalleryView', () => {
 
     const cards = screen.getAllByRole('article');
     expect(cards).toHaveLength(1);
-    expect(within(cards[0]).getByText('Primary', { selector: 'mark' })).toBeVisible();
-    expect(within(cards[0]).getByText('Button')).toBeVisible();
+    expect(within(cards[0]).getAllByText(/Primary/i, { selector: 'mark' }).length).toBeGreaterThan(0);
+    expect(within(cards[0]).getByRole('button', { name: 'Open Primary Button' })).toBeVisible();
+  });
+
+  it('highlights a visible match in the description', () => {
+    resetStore([
+      component('component-description', 'Action Card', ['card'], {
+        description: 'Launch the workflow immediately',
+      }),
+    ]);
+    useAppStore.getState().setSearchQuery('workflow');
+
+    render(<GalleryView columns={2} />);
+
+    expect(screen.getByText('workflow', { selector: 'mark' })).toBeVisible();
+  });
+
+  it('highlights visible matches in category and tag metadata', () => {
+    resetStore([
+      component('component-metadata', 'Revenue Summary', ['commerce'], {
+        category: 'Dashboard',
+      }),
+    ]);
+    useAppStore.getState().setSearchQuery('Dashboard');
+    const { rerender } = render(<GalleryView columns={2} />);
+    expect(screen.getByText('Dashboard', { selector: 'mark' })).toBeVisible();
+
+    useAppStore.getState().setSearchQuery('commerce');
+    rerender(<GalleryView columns={2} />);
+    expect(screen.getByText('commerce', { selector: 'mark' })).toBeVisible();
   });
 
   it('keeps stable card order, selects a card, and persists a drag reorder', async () => {
@@ -209,5 +249,123 @@ describe('GalleryView', () => {
 
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Could not reorder components'));
     expect(useAppStore.getState().components.map((item) => item.id)).toEqual(records.map((item) => item.id));
+  });
+
+  it('serializes overlapping reorders so persistence cannot finish out of order', async () => {
+    let resolveFirst: (() => void) | undefined;
+    reorderComponents
+      .mockImplementationOnce(() => new Promise<void>((resolve) => { resolveFirst = resolve; }))
+      .mockResolvedValueOnce(undefined);
+
+    const first = useAppStore.getState().reorderComponents(library.id, [
+      'component-2', 'component-3', 'component-1',
+    ]);
+    const second = useAppStore.getState().reorderComponents(library.id, [
+      'component-3', 'component-1', 'component-2',
+    ]);
+
+    expect(reorderComponents).toHaveBeenCalledOnce();
+    expect(useAppStore.getState().components.map((item) => item.id)).toEqual([
+      'component-3', 'component-1', 'component-2',
+    ]);
+
+    resolveFirst?.();
+    await first;
+    await second;
+    expect(reorderComponents).toHaveBeenCalledTimes(2);
+    expect(reorderComponents).toHaveBeenNthCalledWith(2, library.id, [
+      'component-3', 'component-1', 'component-2',
+    ]);
+  });
+
+  it('rolls a failed later reorder back to the last successfully persisted order', async () => {
+    let resolveFirst: (() => void) | undefined;
+    reorderComponents
+      .mockImplementationOnce(() => new Promise<void>((resolve) => { resolveFirst = resolve; }))
+      .mockRejectedValueOnce(new Error('second reorder failed'));
+
+    const first = useAppStore.getState().reorderComponents(library.id, [
+      'component-2', 'component-3', 'component-1',
+    ]);
+    const second = useAppStore.getState().reorderComponents(library.id, [
+      'component-3', 'component-1', 'component-2',
+    ]);
+    resolveFirst?.();
+    await first;
+    await expect(second).rejects.toThrow('second reorder failed');
+
+    expect(useAppStore.getState().components.map((item) => item.id)).toEqual([
+      'component-2', 'component-3', 'component-1',
+    ]);
+  });
+
+  it('continues with the newest queued order when an earlier reorder fails', async () => {
+    let rejectFirst: ((error: Error) => void) | undefined;
+    reorderComponents
+      .mockImplementationOnce(() => new Promise<void>((_resolve, reject) => { rejectFirst = reject; }))
+      .mockResolvedValueOnce(undefined);
+
+    const firstReorder = useAppStore.getState().reorderComponents(library.id, [
+      'component-2', 'component-3', 'component-1',
+    ]);
+    const secondReorder = useAppStore.getState().reorderComponents(library.id, [
+      'component-3', 'component-1', 'component-2',
+    ]);
+    rejectFirst?.(new Error('first reorder failed'));
+
+    await expect(firstReorder).rejects.toThrow('first reorder failed');
+    await secondReorder;
+    expect(useAppStore.getState().components.map((item) => item.id)).toEqual([
+      'component-3', 'component-1', 'component-2',
+    ]);
+  });
+
+  it('keeps concurrent edits and deleted membership when reorder rollback runs', async () => {
+    let rejectReorder: ((error: Error) => void) | undefined;
+    reorderComponents.mockImplementationOnce(() => new Promise<void>((_resolve, reject) => {
+      rejectReorder = reject;
+    }));
+    const pending = useAppStore.getState().reorderComponents(library.id, [
+      'component-2', 'component-3', 'component-1',
+    ]);
+
+    useAppStore.getState().updateComponentDraft({
+      ...records[1],
+      html: '<button>Edited while reordering</button>',
+    });
+    await useAppStore.getState().deleteComponent('component-1');
+    rejectReorder?.(new Error('disk unavailable'));
+    await expect(pending).rejects.toThrow('disk unavailable');
+
+    expect(useAppStore.getState().components.map((item) => item.id)).toEqual([
+      'component-2', 'component-3',
+    ]);
+    expect(useAppStore.getState().components[0].html).toBe('<button>Edited while reordering</button>');
+  });
+
+  it('preserves a completed save and a concurrent deletion across reorder rollback', async () => {
+    let rejectReorder: ((error: Error) => void) | undefined;
+    reorderComponents.mockImplementationOnce(() => new Promise<void>((_resolve, reject) => {
+      rejectReorder = reject;
+    }));
+    const pendingReorder = useAppStore.getState().reorderComponents(library.id, [
+      'component-2', 'component-3', 'component-1',
+    ]);
+    const edited = { ...records[1], html: '<button>Persisted during reorder</button>' };
+    useAppStore.getState().updateComponentDraft(edited);
+
+    await useAppStore.getState().saveComponent(edited);
+    await useAppStore.getState().deleteComponent('component-1');
+    rejectReorder?.(new Error('reorder failed after mutations'));
+    await expect(pendingReorder).rejects.toThrow('reorder failed after mutations');
+
+    expect(saveComponentApi).toHaveBeenCalledWith(expect.objectContaining({
+      id: edited.id,
+      html: edited.html,
+    }));
+    expect(useAppStore.getState().components.map((item) => [item.id, item.html])).toEqual([
+      ['component-2', edited.html],
+      ['component-3', records[2].html],
+    ]);
   });
 });

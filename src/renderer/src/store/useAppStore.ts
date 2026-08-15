@@ -45,10 +45,33 @@ const persist = (patch: Partial<AppSettings>) => {
 const componentOperationTails = new Map<string, Promise<unknown>>();
 const componentMutationGenerations = new Map<string, number>();
 const deletingComponentIds = new Set<string>();
-let reorderGeneration = 0;
+const reorderOperationTails = new Map<string, Promise<void>>();
+const reorderLatestGenerations = new Map<string, number>();
+const reorderConfirmedOrders = new Map<string, string[]>();
 
 const mutationGeneration = (componentId: string): number =>
   componentMutationGenerations.get(componentId) ?? 0;
+
+const reorderLiveComponents = (
+  components: ComponentRecord[],
+  requestedOrder: string[],
+): ComponentRecord[] => {
+  const liveById = new Map(components.map((component) => [component.id, component]));
+  const requestedIds = new Set(requestedOrder);
+  return [
+    ...requestedOrder.map((id) => liveById.get(id)).filter(Boolean) as ComponentRecord[],
+    ...components.filter((component) => !requestedIds.has(component.id)),
+  ];
+};
+
+const reconcileOrderMembership = (requestedOrder: string[], components: ComponentRecord[]): string[] => {
+  const liveIds = new Set(components.map((component) => component.id));
+  const requestedIds = new Set(requestedOrder);
+  return [
+    ...requestedOrder.filter((id) => liveIds.has(id)),
+    ...components.map((component) => component.id).filter((id) => !requestedIds.has(id)),
+  ];
+};
 
 const enqueueComponentOperation = <T>(componentId: string, operation: () => Promise<T>): Promise<T> => {
   const previous = componentOperationTails.get(componentId) ?? Promise.resolve();
@@ -176,17 +199,45 @@ export const useAppStore = create<AppStore>((set, get) => ({
     });
   },
   reorderComponents: async (libraryId, componentIds) => {
-    const generation = ++reorderGeneration;
-    const previous = get().components;
-    const byId = new Map(previous.map((component) => [component.id, component]));
-    const reordered = componentIds.map((id) => byId.get(id)).filter(Boolean) as ComponentRecord[];
-    if (reordered.length !== previous.length) throw new Error('Component order is incomplete');
-    set({ components: reordered });
+    const current = get().components;
+    if (new Set(componentIds).size !== componentIds.length
+      || componentIds.length !== current.length
+      || componentIds.some((id) => !current.some((component) => component.id === id))) {
+      throw new Error('Component order is incomplete');
+    }
+
+    const previousTail = reorderOperationTails.get(libraryId);
+    if (!previousTail) reorderConfirmedOrders.set(libraryId, current.map((component) => component.id));
+    const generation = (reorderLatestGenerations.get(libraryId) ?? 0) + 1;
+    reorderLatestGenerations.set(libraryId, generation);
+    set((state) => ({ components: reorderLiveComponents(state.components, componentIds) }));
+
+    const persistOrder = async () => {
+      const live = get();
+      const requestOrder = live.componentsLibraryId === libraryId
+        ? reconcileOrderMembership(componentIds, live.components)
+        : componentIds;
+      await window.componentVault.reorderComponents(libraryId, requestOrder);
+      reorderConfirmedOrders.set(libraryId, requestOrder);
+    };
+    const operation = previousTail
+      ? previousTail.catch(() => undefined).then(persistOrder)
+      : persistOrder();
+    reorderOperationTails.set(libraryId, operation);
     try {
-      await window.componentVault.reorderComponents(libraryId, componentIds);
+      await operation;
     } catch (error) {
-      if (generation === reorderGeneration) set({ components: previous });
+      if (generation === reorderLatestGenerations.get(libraryId)) {
+        const confirmedOrder = reorderConfirmedOrders.get(libraryId) ?? [];
+        set((state) => ({
+          components: reorderLiveComponents(state.components, confirmedOrder),
+        }));
+      }
       throw error;
+    } finally {
+      if (reorderOperationTails.get(libraryId) === operation) {
+        reorderOperationTails.delete(libraryId);
+      }
     }
   },
   updateComponentDraft: (component) => {

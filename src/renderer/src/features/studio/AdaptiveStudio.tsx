@@ -7,6 +7,7 @@ import {
   type CSSProperties,
   type KeyboardEvent,
   type PointerEvent,
+  type Ref,
 } from 'react';
 import type { PreviewPolicy } from '../../../../shared/contracts';
 import { ComponentEditor } from '../editor/ComponentEditor';
@@ -55,9 +56,11 @@ const useNarrowStudio = () => {
 const ComponentList = ({
   selectedComponentId,
   onSelect,
+  selectedOptionRef,
 }: {
   selectedComponentId: string | null;
   onSelect: (componentId: string) => void;
+  selectedOptionRef?: Ref<HTMLButtonElement>;
 }) => {
   const { components, searchQuery, selectedTags } = useAppStore();
   const visible = components.filter((component) => {
@@ -74,6 +77,7 @@ const ComponentList = ({
         <button
           key={component.id}
           type="button"
+          ref={component.id === selectedComponentId ? selectedOptionRef : undefined}
           role="option"
           aria-label={component.name}
           aria-selected={component.id === selectedComponentId}
@@ -105,6 +109,11 @@ export const AdaptiveStudio = ({ ratios }: AdaptiveStudioProps) => {
     updateLayout,
   } = useAppStore();
   const studioRef = useRef<HTMLDivElement>(null);
+  const drawerTriggerRef = useRef<HTMLButtonElement>(null);
+  const drawerRef = useRef<HTMLElement>(null);
+  const drawerCloseRef = useRef<HTMLButtonElement>(null);
+  const drawerInitialFocusRef = useRef<HTMLButtonElement>(null);
+  const drawerWasOpen = useRef(false);
   const narrow = useNarrowStudio();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [paneRatios, setPaneRatios] = useState<StudioRatios>(() =>
@@ -131,6 +140,19 @@ export const AdaptiveStudio = ({ ratios }: AdaptiveStudioProps) => {
   useEffect(() => {
     if (!narrow) setDrawerOpen(false);
   }, [narrow]);
+
+  useEffect(() => {
+    if (drawerOpen) {
+      drawerWasOpen.current = true;
+      drawerInitialFocusRef.current?.focus();
+      if (!drawerInitialFocusRef.current) drawerCloseRef.current?.focus();
+      return;
+    }
+    if (drawerWasOpen.current) {
+      drawerWasOpen.current = false;
+      drawerTriggerRef.current?.focus();
+    }
+  }, [drawerOpen]);
 
   const persistRatios = useCallback((next: StudioRatios) => {
     const normalized = normalizeStudioRatios(next);
@@ -202,6 +224,33 @@ export const AdaptiveStudio = ({ ratios }: AdaptiveStudioProps) => {
     setDrawerOpen(false);
   }, [setSelectedComponentId]);
 
+  const closeDrawer = useCallback(() => setDrawerOpen(false), []);
+
+  const handleDrawerKeyDown = useCallback((event: KeyboardEvent<HTMLElement>) => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      closeDrawer();
+      return;
+    }
+    if (event.key !== 'Tab') return;
+    const focusable = Array.from(drawerRef.current?.querySelectorAll<HTMLElement>(
+      'button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
+    ) ?? []);
+    if (focusable.length === 0) {
+      event.preventDefault();
+      return;
+    }
+    const firstFocusable = focusable[0];
+    const lastFocusable = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === firstFocusable) {
+      event.preventDefault();
+      lastFocusable.focus();
+    } else if (!event.shiftKey && document.activeElement === lastFocusable) {
+      event.preventDefault();
+      firstFocusable.focus();
+    }
+  }, [closeDrawer]);
+
   if (!component) {
     return (
       <section className="studio-empty workspace-panel" aria-label="Empty adaptive studio">
@@ -226,7 +275,7 @@ export const AdaptiveStudio = ({ ratios }: AdaptiveStudioProps) => {
           <h2>{component.name}</h2>
         </div>
         {narrow && (
-          <button type="button" className="button" onClick={() => setDrawerOpen(true)}>
+          <button ref={drawerTriggerRef} type="button" className="button" onClick={() => setDrawerOpen(true)}>
             Open component list
           </button>
         )}
@@ -287,19 +336,25 @@ export const AdaptiveStudio = ({ ratios }: AdaptiveStudioProps) => {
       </div>
 
       {narrow && drawerOpen && (
-        <div className="studio-drawer-backdrop" onMouseDown={() => setDrawerOpen(false)}>
+        <div className="studio-drawer-backdrop" onMouseDown={closeDrawer}>
           <section
+            ref={drawerRef}
             className="studio-drawer"
             role="dialog"
             aria-modal="true"
             aria-label="Component list"
             onMouseDown={(event) => event.stopPropagation()}
+            onKeyDown={handleDrawerKeyDown}
           >
             <header>
               <strong>Components</strong>
-              <button type="button" className="button button--icon" aria-label="Close component list" onClick={() => setDrawerOpen(false)}>×</button>
+              <button ref={drawerCloseRef} type="button" className="button button--icon" aria-label="Close component list" onClick={closeDrawer}>×</button>
             </header>
-            <ComponentList selectedComponentId={selectedComponentId} onSelect={selectComponent} />
+            <ComponentList
+              selectedComponentId={selectedComponentId}
+              onSelect={selectComponent}
+              selectedOptionRef={drawerInitialFocusRef}
+            />
           </section>
         </div>
       )}

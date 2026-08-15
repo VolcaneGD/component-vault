@@ -56,6 +56,7 @@ const makeComponent = (id: string, name: string): ComponentRecord => ({
 const first = makeComponent('component-1', 'Card');
 const second = makeComponent('component-2', 'Banner');
 const saveAppSettings = vi.fn().mockResolvedValue(defaultAppSettings());
+const saveComponent = vi.fn(async (input) => ({ ...first, ...input } as ComponentRecord));
 
 const setWidth = (width: number) => {
   Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: width });
@@ -79,11 +80,13 @@ beforeEach(() => {
   setWidth(1440);
   resetStore();
   saveAppSettings.mockClear();
+  saveComponent.mockClear();
+  saveComponent.mockImplementation(async (input) => ({ ...first, ...input } as ComponentRecord));
   Object.defineProperty(window, 'componentVault', {
     configurable: true,
     value: {
       saveAppSettings,
-      saveComponent: vi.fn(async (input) => ({ ...first, ...input })),
+      saveComponent,
       deleteComponent: vi.fn().mockResolvedValue(true),
       configurePreviewNetwork: vi.fn().mockResolvedValue(undefined),
       releasePreviewNetwork: vi.fn().mockResolvedValue(undefined),
@@ -137,6 +140,69 @@ describe('AdaptiveStudio', () => {
     expect(useAppStore.getState().selectedComponentId).toBe(second.id);
     expect(screen.queryByRole('dialog', { name: 'Component list' })).not.toBeInTheDocument();
     expect(screen.getByDisplayValue('Banner')).toBeVisible();
+  });
+
+  it('flushes an edited component before switching and preserves its draft when returning', async () => {
+    const user = userEvent.setup();
+    render(<AdaptiveStudio ratios={[0.24, 0.42, 0.34]} />);
+    fireEvent.change(screen.getByRole('textbox', { name: 'html code' }), {
+      target: { value: '<article>Unsaved studio edit</article>' },
+    });
+
+    await user.click(screen.getByRole('option', { name: 'Banner' }));
+    await waitFor(() => expect(saveComponent).toHaveBeenCalledWith(expect.objectContaining({
+      id: first.id,
+      html: '<article>Unsaved studio edit</article>',
+    })));
+
+    await user.click(screen.getByRole('option', { name: 'Card' }));
+    expect(screen.getByRole('textbox', { name: 'html code' })).toHaveValue(
+      '<article>Unsaved studio edit</article>',
+    );
+  });
+
+  it('lets a returned dirty draft be manually retried when the switch flush failed', async () => {
+    const user = userEvent.setup();
+    saveComponent.mockRejectedValueOnce(new Error('temporary disk error'));
+    render(<AdaptiveStudio ratios={[0.24, 0.42, 0.34]} />);
+    fireEvent.change(screen.getByRole('textbox', { name: 'html code' }), {
+      target: { value: '<article>Retry this edit</article>' },
+    });
+
+    await user.click(screen.getByRole('option', { name: 'Banner' }));
+    await waitFor(() => expect(saveComponent).toHaveBeenCalledTimes(1));
+    await user.click(screen.getByRole('option', { name: 'Card' }));
+    await user.click(screen.getByRole('button', { name: 'Save component' }));
+
+    await waitFor(() => expect(saveComponent).toHaveBeenCalledTimes(2));
+    expect(saveComponent).toHaveBeenLastCalledWith(expect.objectContaining({
+      id: first.id,
+      html: '<article>Retry this edit</article>',
+    }));
+  });
+
+  it('traps focus in the modal drawer, closes on Escape, and restores trigger focus', async () => {
+    const user = userEvent.setup();
+    setWidth(1100);
+    render(<AdaptiveStudio ratios={[0.24, 0.42, 0.34]} />);
+    const trigger = screen.getByRole('button', { name: 'Open component list' });
+
+    await user.click(trigger);
+    const dialog = screen.getByRole('dialog', { name: 'Component list' });
+    const selectedOption = screen.getByRole('option', { name: 'Card' });
+    await waitFor(() => expect(selectedOption).toHaveFocus());
+
+    const close = screen.getByRole('button', { name: 'Close component list' });
+    const lastOption = screen.getByRole('option', { name: 'Banner' });
+    lastOption.focus();
+    fireEvent.keyDown(dialog, { key: 'Tab' });
+    expect(close).toHaveFocus();
+    fireEvent.keyDown(dialog, { key: 'Tab', shiftKey: true });
+    expect(lastOption).toHaveFocus();
+
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+    expect(screen.queryByRole('dialog', { name: 'Component list' })).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
   });
 
   it('switches to the drawer layout when a resize crosses the breakpoint', () => {

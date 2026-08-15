@@ -133,9 +133,16 @@ const GalleryCard = ({
           />
         </label>
       </div>
-      {component.description && <p>{component.description}</p>}
+      {component.category && (
+        <span className="gallery-card__category">
+          <Highlight text={component.category} query={query} />
+        </span>
+      )}
+      {component.description && <p><Highlight text={component.description} query={query} /></p>}
       <div className="gallery-card__tags" aria-label={`${component.name} tags`}>
-        {component.tags.map((tag) => <span key={tag}>{tag}</span>)}
+        {component.tags.map((tag) => (
+          <span key={tag}><Highlight text={tag} query={query} /></span>
+        ))}
       </div>
     </div>
   </article>
