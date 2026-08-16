@@ -1,7 +1,7 @@
 import { copyFileSync, existsSync } from 'node:fs';
 import { dirname, basename, join } from 'node:path';
 import Database from 'better-sqlite3';
-import { SCHEMA_VERSION, schemaV1, schemaV2 } from './schema';
+import { SCHEMA_VERSION, schemaV1, schemaV2, schemaV3 } from './schema';
 
 export { SCHEMA_VERSION } from './schema';
 
@@ -18,6 +18,7 @@ export const openDatabase = (databasePath: string): DatabaseContext => {
   const db = new Database(databasePath);
   db.pragma('foreign_keys = ON');
   db.pragma('journal_mode = WAL');
+  db.pragma('busy_timeout = 5000');
 
   const backupBeforeMigration = (): string | null => {
     if (databasePath === ':memory:' || !existsSync(databasePath)) return null;
@@ -52,6 +53,9 @@ const migrate = (db: Database.Database, backupBeforeMigration: () => string | nu
     }
     if (currentVersion < 2) {
       db.exec(schemaV2);
+    }
+    if (currentVersion < 3) {
+      db.exec(schemaV3);
     }
     if (currentVersion < SCHEMA_VERSION) {
       db.prepare('DELETE FROM schema_meta').run();

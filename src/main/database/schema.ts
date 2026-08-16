@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 export const schemaV1 = `
   CREATE TABLE IF NOT EXISTS schema_meta (
@@ -70,4 +70,9 @@ export const schemaV2 = `
 
   INSERT OR IGNORE INTO component_deletion_tombstones (component_id, deleted_at)
     SELECT id, deleted_at FROM components WHERE deleted_at IS NOT NULL;
+`;
+
+export const schemaV3 = `
+  ALTER TABLE libraries ADD COLUMN revision INTEGER NOT NULL DEFAULT 1;
+  ALTER TABLE components ADD COLUMN revision INTEGER NOT NULL DEFAULT 1;
 `;

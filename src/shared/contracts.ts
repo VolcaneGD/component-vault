@@ -15,6 +15,7 @@ export interface ComponentRecord {
   previewPolicy: PreviewPolicy;
   createdAt: string;
   updatedAt: string;
+  revision?: number;
   deletedAt: string | null;
 }
 
@@ -24,6 +25,7 @@ export interface LibraryRecord {
   description: string;
   createdAt: string;
   updatedAt: string;
+  revision?: number;
 }
 
 export interface PreviewPolicy {

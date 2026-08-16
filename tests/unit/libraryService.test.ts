@@ -208,6 +208,28 @@ describe('LibraryService', () => {
       'https://cdn.example.test',
     ]);
   });
+
+  it('rejects an existing-component update whose revision is stale', () => {
+    const service = createLibraryService(openTestDatabase());
+    const library = service.saveLibrary({ name: 'Revision safety', description: '' });
+    const original = service.saveComponent(componentInput(library.id, 'Button'));
+    const guiSaved = service.saveComponent({ ...original, html: '<button>GUI edit</button>' });
+
+    expect(original.revision).toBeTypeOf('number');
+    expect(guiSaved.revision).toBeTypeOf('number');
+    expect(guiSaved.revision).not.toBe(original.revision);
+    let failure: unknown;
+    try {
+      service.saveComponentIfRevision(
+        { ...original, html: '<button>CLI edit</button>' },
+        original.revision!,
+      );
+    } catch (error) {
+      failure = error;
+    }
+    expect(failure).toMatchObject({ code: 'conflict', currentRevision: guiSaved.revision });
+    expect(service.getComponent(original.id)?.html).toBe('<button>GUI edit</button>');
+  });
 });
 
 describe('SettingsService', () => {

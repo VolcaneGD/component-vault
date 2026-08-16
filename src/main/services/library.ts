@@ -18,6 +18,7 @@ export interface LibraryService {
   listComponents: (libraryId: string) => ComponentRecord[];
   getComponent: (componentId: string) => ComponentRecord | undefined;
   saveComponent: (component: ComponentSaveInput) => ComponentRecord;
+  saveComponentIfRevision: (component: ComponentSaveInput, expectedRevision: number) => ComponentRecord;
   deleteComponent: (componentId: string) => SoftDeleteToken | null;
   restoreDeletedComponent: (token: SoftDeleteToken) => ComponentRecord | undefined;
   finalizeDeletedComponent: (token: SoftDeleteToken) => boolean;
@@ -35,12 +36,12 @@ interface LibraryServiceOptions {
 }
 
 type LibraryRow = {
-  id: string; name: string; description: string; created_at: string; updated_at: string;
+  id: string; name: string; description: string; created_at: string; updated_at: string; revision: number;
 };
 type ComponentRow = {
   id: string; library_id: string; name: string; description: string; category: string;
   html: string; css: string; javascript: string; source_type: string; original_file_name: string | null;
-  created_at: string; updated_at: string; deleted_at: string | null;
+  created_at: string; updated_at: string; deleted_at: string | null; revision: number;
 };
 type PolicyRow = {
   allow_scripts: number; allow_forms: number; allow_popups: number;
@@ -56,6 +57,14 @@ const DELETE_UNDO_WINDOW_MS = 8_000;
 const RECOVERY_SESSION_KEY = 'recovery-session';
 const RECOVERY_PENDING_KEY = 'recovery-pending';
 
+export class ConflictError extends Error {
+  readonly code = 'conflict';
+
+  constructor(readonly currentRevision: number) {
+    super('The record changed; read it again before writing.');
+  }
+}
+
 export const createLibraryService = (
   { db }: DatabaseContext,
   { now = () => new Date() }: LibraryServiceOptions = {},
@@ -69,7 +78,7 @@ export const createLibraryService = (
     const id = library.id ?? randomUUID();
     const existing = db.prepare('SELECT id FROM libraries WHERE id = ?').get(id);
     if (existing) {
-      db.prepare('UPDATE libraries SET name = ?, description = ?, updated_at = ? WHERE id = ?')
+      db.prepare('UPDATE libraries SET name = ?, description = ?, updated_at = ?, revision = revision + 1 WHERE id = ?')
         .run(library.name, library.description, savedAt, id);
     } else {
       db.prepare('INSERT INTO libraries (id, name, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?)')
@@ -92,7 +101,7 @@ export const createLibraryService = (
     'SELECT * FROM components WHERE library_id = ? AND deleted_at IS NULL ORDER BY sort_order ASC, created_at ASC, id ASC',
   ).all(libraryId).map(row => readComponent(db, row as ComponentRow));
 
-  const saveComponent = db.transaction((component: ComponentSaveInput): ComponentRecord => {
+  const saveComponentInternal = (component: ComponentSaveInput): ComponentRecord => {
     if (!isPreviewPolicy(component.previewPolicy)) throw new Error('Invalid preview policy');
     const savedAt = now().toISOString();
     const id = component.id ?? randomUUID();
@@ -100,12 +109,12 @@ export const createLibraryService = (
       'SELECT component_id FROM component_deletion_tombstones WHERE component_id = ?',
     ).get(id);
     if (tombstone) throw new Error('Component is deleted');
-    const existing = db.prepare('SELECT id, deleted_at FROM components WHERE id = ?').get(id) as
-      | { id: string; deleted_at: string | null }
+    const existing = db.prepare('SELECT id, deleted_at, revision FROM components WHERE id = ?').get(id) as
+      | { id: string; deleted_at: string | null; revision: number }
       | undefined;
     if (existing?.deleted_at) throw new Error('Component is deleted');
     if (existing) {
-      db.prepare(`UPDATE components SET library_id = ?, name = ?, description = ?, category = ?, html = ?, css = ?, javascript = ?, source_type = ?, original_file_name = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL`)
+      db.prepare(`UPDATE components SET library_id = ?, name = ?, description = ?, category = ?, html = ?, css = ?, javascript = ?, source_type = ?, original_file_name = ?, updated_at = ?, revision = revision + 1 WHERE id = ? AND deleted_at IS NULL`)
         .run(component.libraryId, component.name, component.description, component.category, component.html,
           component.css, component.javascript, component.sourceType, component.originalFileName, savedAt, id);
     } else {
@@ -144,6 +153,17 @@ export const createLibraryService = (
     }
 
     return readComponent(db, db.prepare('SELECT * FROM components WHERE id = ?').get(id) as ComponentRow);
+  };
+
+  const saveComponent = db.transaction(saveComponentInternal);
+  const saveComponentIfRevision = db.transaction((component: ComponentSaveInput, expectedRevision: number): ComponentRecord => {
+    if (!component.id) throw new Error('A component id is required for a conditional save');
+    const current = db.prepare('SELECT revision, deleted_at FROM components WHERE id = ?').get(component.id) as
+      | { revision: number; deleted_at: string | null }
+      | undefined;
+    if (!current || current.deleted_at !== null) throw new Error('Component is deleted');
+    if (current.revision !== expectedRevision) throw new ConflictError(current.revision);
+    return saveComponentInternal(component);
   });
 
   const deleteComponent = db.transaction((componentId: string): SoftDeleteToken | null => {
@@ -244,7 +264,7 @@ export const createLibraryService = (
   };
 
   return {
-    listLibraries, saveLibrary, deleteLibrary, listComponents, getComponent, saveComponent,
+    listLibraries, saveLibrary, deleteLibrary, listComponents, getComponent, saveComponent, saveComponentIfRevision,
     deleteComponent, restoreDeletedComponent, finalizeDeletedComponent, purgeExpiredDeletedComponents,
     reorderComponents, searchComponents, startSession, getRecoverySnapshot, ackRecoverySnapshot, markCleanShutdown,
   };
@@ -310,7 +330,10 @@ const sameRecoverySnapshot = (left: RecoverySnapshot, right: RecoverySnapshot): 
 
 const toLibrary = (row: unknown): LibraryRecord => {
   const library = row as LibraryRow;
-  return { id: library.id, name: library.name, description: library.description, createdAt: library.created_at, updatedAt: library.updated_at };
+  return {
+    id: library.id, name: library.name, description: library.description,
+    createdAt: library.created_at, updatedAt: library.updated_at, revision: library.revision,
+  };
 };
 
 const readComponent = (db: DatabaseContext['db'], row: ComponentRow): ComponentRecord => {
@@ -321,7 +344,7 @@ const readComponent = (db: DatabaseContext['db'], row: ComponentRow): ComponentR
     id: row.id, libraryId: row.library_id, name: row.name, description: row.description, category: row.category,
     html: row.html, css: row.css, javascript: row.javascript, sourceType: row.source_type,
     originalFileName: row.original_file_name, createdAt: row.created_at, updatedAt: row.updated_at,
-    deletedAt: row.deleted_at, tags,
+    revision: row.revision, deletedAt: row.deleted_at, tags,
     previewPolicy: policy ? toPreviewPolicy(policy) : defaultPreviewPolicy(),
   };
 };
