@@ -17,7 +17,7 @@ describe('shared contracts', () => {
   });
 
   it('normalizes legacy application settings with a light preview canvas', () => {
-    const { previewTheme: _previewTheme, ...legacySettings } = defaultAppSettings() as Record<string, unknown>;
+    const { previewTheme: _previewTheme, ...legacySettings } = defaultAppSettings() as unknown as Record<string, unknown>;
 
     expect(normalizeAppSettings(legacySettings)).toMatchObject({ previewTheme: 'light' });
   });

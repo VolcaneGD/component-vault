@@ -245,7 +245,7 @@ const validateComponent = (value: unknown): ComponentSaveInput => {
 const validateSettingsPatch = (value: unknown): Partial<AppSettings> => {
   const patch = record(value, 'settings');
   const allowedKeys = new Set([
-    'viewMode', 'galleryColumns', 'editorPreviewRatio', 'studioPaneRatios', 'lastLibraryId', 'lastComponentId',
+    'viewMode', 'previewTheme', 'galleryColumns', 'editorPreviewRatio', 'studioPaneRatios', 'lastLibraryId', 'lastComponentId',
   ]);
   if (Object.keys(patch).some(key => !allowedKeys.has(key))) throw new Error('Unknown application setting');
   const candidate = { ...defaultSettingsForValidation, ...patch };
@@ -274,6 +274,7 @@ const validateImportOptions = (value: unknown): HtmlImportOptions => {
 
 const defaultSettingsForValidation: AppSettings = {
   language: 'en',
+  previewTheme: 'light',
   viewMode: 'workbench', galleryColumns: 3, editorPreviewRatio: 0.55,
   studioPaneRatios: [0.24, 0.42, 0.34], lastLibraryId: null, lastComponentId: null,
 };

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, 
 import type { PreviewPolicy } from '../../../../shared/contracts';
 import { ComponentEditor } from '../editor/ComponentEditor';
 import { PreviewHost } from '../preview/PreviewHost';
+import { PreviewThemeToggle } from '../preview/PreviewThemeToggle';
 import { ALL_COMPONENTS_SCOPE, useAppStore } from '../../store/useAppStore';
 import { t } from '../../i18n';
 
@@ -144,6 +145,7 @@ export const WorkbenchView = () => {
       <div className="workbench__preview-panel">
         <div className="workbench__preview-heading">
           <span>{t(settings.language, 'livePreview')}</span>
+          <PreviewThemeToggle />
           <span className="status-dot">{t(settings.language, 'isolated')}</span>
         </div>
         <PreviewHost component={component} onPreviewPolicyChange={persistPreviewPolicy} />

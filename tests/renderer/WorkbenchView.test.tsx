@@ -88,6 +88,14 @@ afterEach(() => {
 });
 
 describe('WorkbenchView', () => {
+  it('uses the persisted dark preview canvas', () => {
+    useAppStore.setState({ settings: { ...useAppStore.getState().settings, previewTheme: 'dark' } });
+
+    render(<WorkbenchView />);
+
+    expect(screen.getByTitle('Component preview')).toHaveAttribute('data-preview-theme', 'dark');
+  });
+
   it('consumes a pending origin when mounting after creation completed without an editor', async () => {
     const draft = {
       ...component,

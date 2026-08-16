@@ -64,6 +64,7 @@ export const PreviewHost = ({
   compact = false,
 }: PreviewHostProps) => {
   const language = useAppStore((state) => state.settings.language);
+  const previewTheme = useAppStore((state) => state.settings.previewTheme);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const rateWindow = useRef<number[]>([]);
   const currentComponent = useRef({ id: component.id, policyKey: previewPolicyKey(component.previewPolicy) });
@@ -224,6 +225,7 @@ export const PreviewHost = ({
         key={previewId}
         ref={iframeRef}
         className="preview-host__frame"
+        data-preview-theme={previewTheme}
         title={title ?? t(language, 'componentPreview')}
         loading={loading}
         sandbox="allow-scripts allow-forms allow-modals"

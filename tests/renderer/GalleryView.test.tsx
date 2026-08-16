@@ -110,6 +110,14 @@ afterEach(() => {
 });
 
 describe('GalleryView', () => {
+  it('uses the persisted dark preview canvas for gallery thumbnails', () => {
+    useAppStore.setState({ settings: { ...useAppStore.getState().settings, previewTheme: 'dark' } });
+
+    render(<GalleryView columns={2} />);
+
+    expect(screen.getByTitle('Preview of Primary Button')).toHaveAttribute('data-preview-theme', 'dark');
+  });
+
   it('changes Gallery to four columns and persists the setting', async () => {
     const user = userEvent.setup();
     render(<GalleryView columns={2} />);

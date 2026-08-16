@@ -10,6 +10,7 @@ import {
 } from 'react';
 import type { ComponentRecord, PreviewPolicy } from '../../../../shared/contracts';
 import { PreviewHost } from '../preview/PreviewHost';
+import { PreviewThemeToggle } from '../preview/PreviewThemeToggle';
 import { ALL_COMPONENTS_SCOPE, useAppStore } from '../../store/useAppStore';
 import { t } from '../../i18n';
 
@@ -360,16 +361,19 @@ export const GalleryView = ({ columns }: GalleryViewProps) => {
           <h2 id="gallery-heading">{t(settings.language, 'componentCollection')}</h2>
           <span className="gallery-toolbar__count">{filtered.length} of {components.length}</span>
         </div>
-        <label className="gallery-columns">
-          <span>{t(settings.language, 'columns')}</span>
-          <select
-            aria-label={t(settings.language, 'galleryColumns')}
-            value={galleryColumns}
-            onChange={(event) => changeColumns(event.target.value)}
-          >
-            {[1, 2, 3, 4].map((value) => <option key={value} value={value}>{value}</option>)}
-          </select>
-        </label>
+        <div className="gallery-toolbar__controls">
+          <PreviewThemeToggle />
+          <label className="gallery-columns">
+            <span>{t(settings.language, 'columns')}</span>
+            <select
+              aria-label={t(settings.language, 'galleryColumns')}
+              value={galleryColumns}
+              onChange={(event) => changeColumns(event.target.value)}
+            >
+              {[1, 2, 3, 4].map((value) => <option key={value} value={value}>{value}</option>)}
+            </select>
+          </label>
+        </div>
       </header>
 
       {selectedComponentIds.length > 0 && (

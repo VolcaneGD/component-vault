@@ -12,6 +12,7 @@ import {
 import type { PreviewPolicy } from '../../../../shared/contracts';
 import { ComponentEditor } from '../editor/ComponentEditor';
 import { PreviewHost } from '../preview/PreviewHost';
+import { PreviewThemeToggle } from '../preview/PreviewThemeToggle';
 import { ALL_COMPONENTS_SCOPE, useAppStore } from '../../store/useAppStore';
 import { t } from '../../i18n';
 
@@ -336,6 +337,7 @@ export const AdaptiveStudio = ({ ratios }: AdaptiveStudioProps) => {
         <section className="studio-pane studio-pane--preview" aria-label={t(settings.language, 'livePreviewPane')}>
           <div className="studio-pane__heading">
             <span>{t(settings.language, 'livePreview')}</span>
+            <PreviewThemeToggle />
             <span className="status-dot">{t(settings.language, 'isolated')}</span>
           </div>
           <PreviewHost component={component} onPreviewPolicyChange={persistPreviewPolicy} />

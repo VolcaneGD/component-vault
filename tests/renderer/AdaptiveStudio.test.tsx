@@ -104,6 +104,14 @@ afterEach(() => {
 });
 
 describe('AdaptiveStudio', () => {
+  it('uses the persisted dark preview canvas in the studio pane', () => {
+    useAppStore.setState({ settings: { ...useAppStore.getState().settings, previewTheme: 'dark' } });
+
+    render(<AdaptiveStudio ratios={[0.24, 0.42, 0.34]} />);
+
+    expect(screen.getByTitle('Component preview')).toHaveAttribute('data-preview-theme', 'dark');
+  });
+
   it('consumes a pending origin when Studio first mounts the saved UUID', async () => {
     const saved = {
       ...first,

@@ -1,11 +1,12 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ComponentRecord, PreviewPolicy } from '../../src/shared/contracts';
+import { defaultAppSettings, type ComponentRecord, type PreviewPolicy } from '../../src/shared/contracts';
 import {
   PREVIEW_EVENT_CHANNEL,
   PREVIEW_READY_CHANNEL,
 } from '../../src/renderer/src/features/preview/previewProtocol';
 import { PreviewHost } from '../../src/renderer/src/features/preview/PreviewHost';
+import { useAppStore } from '../../src/renderer/src/store/useAppStore';
 
 const configurePreviewNetwork = vi.fn().mockResolvedValue(undefined);
 const releasePreviewNetwork = vi.fn().mockResolvedValue(undefined);
@@ -22,6 +23,7 @@ beforeEach(() => {
   Object.defineProperty(window, 'componentVault', {
     configurable: true,
     value: {
+      saveAppSettings: vi.fn().mockResolvedValue(defaultAppSettings()),
       configurePreviewNetwork,
       releasePreviewNetwork,
       onPreviewRequestBlocked: (listener: typeof blockedRequestListener) => {
@@ -95,6 +97,14 @@ const readyPreview = async (iframe: HTMLIFrameElement) => {
 };
 
 describe('PreviewHost', () => {
+  it('applies the selected shared preview canvas theme to its iframe', () => {
+    useAppStore.setState({ settings: { ...defaultAppSettings(), previewTheme: 'dark' } });
+
+    render(<PreviewHost component={component()} />);
+
+    expect(screen.getByTitle('Component preview')).toHaveAttribute('data-preview-theme', 'dark');
+  });
+
   it('releases only its preview instance when the frame unmounts', () => {
     const { unmount } = render(<PreviewHost component={component()} />);
     const previewId = previewIdFrom(screen.getByTitle('Component preview') as HTMLIFrameElement);

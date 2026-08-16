@@ -62,6 +62,9 @@ test('persists the complete create, import, edit, view, copy, export, and re-imp
     await expect(page.frameLocator('iframe[title="Component preview"]').locator('#launch'))
       .toHaveAttribute('data-ready', 'yes');
 
+    await page.getByRole('button', { name: 'Dark preview background' }).click();
+    await expect(page.locator('iframe[title="Component preview"]')).toHaveAttribute('data-preview-theme', 'dark');
+
     const workbenchSplitter = page.getByRole('separator', { name: 'Resize editor and preview' });
     const initialSplit = Number(await workbenchSplitter.getAttribute('aria-valuenow'));
     await workbenchSplitter.focus();
@@ -69,10 +72,12 @@ test('persists the complete create, import, edit, view, copy, export, and re-imp
     await expect(workbenchSplitter).toHaveAttribute('aria-valuenow', String(initialSplit + 5));
 
     await page.getByRole('button', { name: 'B Gallery' }).click();
+    await expect(page.locator('iframe[title^="Preview of"]').first()).toHaveAttribute('data-preview-theme', 'dark');
     await page.getByLabel('Gallery columns').selectOption('4');
     await expect(page.getByLabel('Gallery columns')).toHaveValue('4');
     await page.getByRole('button', { name: 'C Adaptive Studio' }).click();
     await expect(page.getByRole('region', { name: 'Adaptive Studio workspace' })).toBeVisible();
+    await expect(page.locator('iframe[title="Component preview"]')).toHaveAttribute('data-preview-theme', 'dark');
 
     const savedBounds = await electronApp!.evaluate(({ BrowserWindow, screen }) => {
       const window = BrowserWindow.getAllWindows()[0];
@@ -96,6 +101,7 @@ test('persists the complete create, import, edit, view, copy, export, and re-imp
     await page.getByRole('button', { name: 'B Gallery' }).click();
     await expect(page.getByLabel('Gallery columns')).toHaveValue('4');
     await page.getByRole('button', { name: 'A Workbench' }).click();
+    await expect(page.locator('iframe[title="Component preview"]')).toHaveAttribute('data-preview-theme', 'dark');
     await expect(page.getByRole('separator', { name: 'Resize editor and preview' }))
       .toHaveAttribute('aria-valuenow', String(initialSplit + 5));
 
