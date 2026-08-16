@@ -22,4 +22,5 @@ export const IPC_CHANNELS = {
   exportSaveCss: 'export:save-css',
   previewConfigureNetwork: 'preview:configure-network',
   previewReleaseNetwork: 'preview:release-network',
+  libraryChanged: 'library:changed',
 } as const;

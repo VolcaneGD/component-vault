@@ -87,9 +87,12 @@ export const commandRegistry = (dependencies: CommandRegistryDependencies): CliC
         libraries.saveComponentIfRevision(asExistingComponent(input.component), requiredRevision(input))),
     definition('component delete', 'Soft-delete a component using its current revision.', true, 'component',
       objectSchema({ id: idSchema, ifRevision: revisionSchema }, ['id', 'ifRevision']), input => {
-        const token = libraries.deleteComponentIfRevision(requiredId(input, 'id'), requiredRevision(input));
+        const id = requiredId(input, 'id');
+        const component = libraries.getComponent(id);
+        if (!component) throw new CliNotFoundError('Component was not found.');
+        const token = libraries.deleteComponentIfRevision(id, requiredRevision(input));
         if (!token) throw new CliNotFoundError('Component was not found.');
-        return token;
+        return { ...token, libraryId: component.libraryId };
       }),
     definition('component restore', 'Restore a soft-deleted component with its exact undo token.', true, 'none',
       objectSchema({ token: { type: 'object' } }, ['token']), input => {

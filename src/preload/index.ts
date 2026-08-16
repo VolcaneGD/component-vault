@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import {
   PREVIEW_REQUEST_BLOCKED_CHANNEL,
   type ComponentVaultApi,
+  type LibraryChangedEvent,
   type PreviewBlockedRequest,
 } from '../shared/contracts';
 import { IPC_CHANNELS } from '../shared/ipcChannels';
@@ -35,6 +36,11 @@ const componentVaultApi: ComponentVaultApi = {
     const receiveBlockedRequest = (_event: Electron.IpcRendererEvent, event: PreviewBlockedRequest) => listener(event);
     ipcRenderer.on(PREVIEW_REQUEST_BLOCKED_CHANNEL, receiveBlockedRequest);
     return () => ipcRenderer.removeListener(PREVIEW_REQUEST_BLOCKED_CHANNEL, receiveBlockedRequest);
+  },
+  onLibraryChanged: listener => {
+    const receiveLibraryChanged = (_event: Electron.IpcRendererEvent, event: LibraryChangedEvent) => listener(event);
+    ipcRenderer.on(IPC_CHANNELS.libraryChanged, receiveLibraryChanged);
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.libraryChanged, receiveLibraryChanged);
   },
 };
 

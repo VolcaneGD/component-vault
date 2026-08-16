@@ -5,6 +5,7 @@ import {
   type ComponentRecord,
   type ComponentSaveInput,
   type LibraryRecord,
+  type LibraryChangedEvent,
   type SoftDeleteToken,
   type ViewMode,
 } from '../../../shared/contracts';
@@ -29,6 +30,8 @@ interface AppStore {
   isHydrated: boolean;
   mutationVersion: number;
   pendingDeletions: PendingDeletion[];
+  dirtyComponentIds: string[];
+  externalChangePending: boolean;
   hydrate: () => Promise<void>;
   setViewMode: (viewMode: ViewMode) => void;
   setSelectedLibraryId: (libraryId: string | null) => void;
@@ -41,6 +44,7 @@ interface AppStore {
   loadComponents: (libraryId: string) => Promise<void>;
   reorderComponents: (libraryId: string, componentIds: string[]) => Promise<void>;
   updateComponentDraft: (component: ComponentRecord) => void;
+  handleExternalLibraryChanged: (event: LibraryChangedEvent) => Promise<void>;
   beginCodeComponent: (libraryId: string) => ComponentRecord;
   consumeDraftOrigin: (componentId: string, draftOriginId: string) => void;
   acceptSavedComponents: (components: ComponentRecord[]) => Promise<void>;
@@ -156,6 +160,19 @@ const mergeSavedEnvelopeWithLiveDraft = (
   deletedAt: saved.deletedAt,
 });
 
+const hasSameEditableContent = (left: ComponentRecord, right: ComponentRecord): boolean =>
+  left.libraryId === right.libraryId
+  && left.name === right.name
+  && left.description === right.description
+  && left.category === right.category
+  && left.html === right.html
+  && left.css === right.css
+  && left.javascript === right.javascript
+  && left.sourceType === right.sourceType
+  && left.originalFileName === right.originalFileName
+  && JSON.stringify(left.tags) === JSON.stringify(right.tags)
+  && JSON.stringify(left.previewPolicy) === JSON.stringify(right.previewPolicy);
+
 export const useAppStore = create<AppStore>((set, get) => ({
   settings: defaultAppSettings(),
   libraries: [],
@@ -170,6 +187,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
   isHydrated: false,
   mutationVersion: 0,
   pendingDeletions: [],
+  dirtyComponentIds: [],
+  externalChangePending: false,
   hydrate: () => {
     if (hydrationInFlight) return hydrationInFlight;
     const hydration = (async () => {
@@ -237,6 +256,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
       selectedLibraryId,
       selectedComponentId: null,
       selectedComponentIds: [],
+      dirtyComponentIds: [],
+      externalChangePending: false,
       components: [],
       componentsLibraryId: null,
       draftOrigins: {},
@@ -279,6 +300,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
         components,
         componentsLibraryId: libraryId,
         draftOrigins: {},
+        dirtyComponentIds: [],
+        externalChangePending: false,
         selectedComponentId,
         selectedComponentIds: state.selectedComponentIds.filter((id) =>
           components.some((component) => component.id === id)),
@@ -328,9 +351,35 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }
   },
   updateComponentDraft: (component) => {
-    set((state) => ({
-      components: state.components.map((item) => item.id === component.id ? component : item),
-    }));
+    set((state) => {
+      const current = state.components.find((item) => item.id === component.id);
+      const acknowledgedSave = Boolean(current
+        && hasSameEditableContent(current, component)
+        && current.updatedAt !== component.updatedAt);
+      return {
+        components: state.components.map((item) => item.id === component.id ? component : item),
+        dirtyComponentIds: acknowledgedSave
+          ? state.dirtyComponentIds.filter((id) => id !== component.id)
+          : state.dirtyComponentIds.includes(component.id)
+            ? state.dirtyComponentIds
+            : [...state.dirtyComponentIds, component.id],
+      };
+    });
+  },
+  handleExternalLibraryChanged: async (event) => {
+    const api = window.componentVault;
+    if (!api) return;
+    const libraries = await api.listLibraries().catch(() => null);
+    if (libraries) set({ libraries });
+    const state = get();
+    if (!event.libraryId || state.componentsLibraryId !== event.libraryId) return;
+    if (state.dirtyComponentIds.length > 0) {
+      set({ externalChangePending: true });
+      return;
+    }
+    await get().loadComponents(event.libraryId).catch(() => {
+      set({ externalChangePending: true });
+    });
   },
   beginCodeComponent: (libraryId) => {
     const now = new Date().toISOString();
@@ -520,6 +569,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
         result = mergeSavedEnvelopeWithLiveDraft(saved, liveAfterSave);
         return {
           components: state.components.map((item) => item.id === componentId ? result : item),
+          dirtyComponentIds: hasSameEditableContent(liveAfterSave, liveBeforeSave)
+            ? state.dirtyComponentIds.filter((id) => id !== componentId)
+            : state.dirtyComponentIds,
         };
       });
       return result;

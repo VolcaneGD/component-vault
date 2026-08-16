@@ -47,6 +47,12 @@ export interface PreviewBlockedRequest {
   origin: string;
 }
 
+export interface LibraryChangedEvent {
+  libraryId: string | null;
+  revision: number | null;
+  command: string;
+}
+
 export const PREVIEW_REQUEST_BLOCKED_CHANNEL = 'preview:request-blocked';
 
 export interface LibrarySaveInput {
@@ -180,6 +186,7 @@ export interface ComponentVaultApi {
   configurePreviewNetwork: (request: PreviewNetworkPolicyRequest) => Promise<void>;
   releasePreviewNetwork: (previewId: string) => Promise<void>;
   onPreviewRequestBlocked: (listener: (event: PreviewBlockedRequest) => void) => () => void;
+  onLibraryChanged: (listener: (event: LibraryChangedEvent) => void) => () => void;
 }
 
 export const defaultAppSettings = (): AppSettings => ({

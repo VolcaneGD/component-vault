@@ -61,6 +61,7 @@ export const AppShell = () => {
     pendingDeletions,
     undoDelete,
     expireDeletion,
+    handleExternalLibraryChanged,
   } = useAppStore();
   const [importMode, setImportMode] = useState<'files' | 'code' | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
@@ -79,6 +80,10 @@ export const AppShell = () => {
   useEffect(() => {
     void hydrate();
   }, [hydrate]);
+
+  useEffect(() => window.componentVault?.onLibraryChanged?.(event => {
+    void handleExternalLibraryChanged(event);
+  }), [handleExternalLibraryChanged]);
 
   useEffect(() => {
     const openPalette = (event: KeyboardEvent) => {
