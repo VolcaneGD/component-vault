@@ -7,6 +7,8 @@ import type {
   LibraryRecord,
 } from '../../../../shared/contracts';
 import { createCopyText, sanitizeDownloadFileName } from '../../../../shared/exportCode';
+import { useAppStore } from '../../store/useAppStore';
+import { t } from '../../i18n';
 
 interface ExportDialogProps {
   library: LibraryRecord;
@@ -35,6 +37,7 @@ export const ExportDialog = ({
   initiallySelectedIds,
   onClose,
 }: ExportDialogProps) => {
+  const language = useAppStore((state) => state.settings.language);
   const initialIds = initiallySelectedIds?.length
     ? initiallySelectedIds.filter((id) => components.some((component) => component.id === id))
     : components.map((component) => component.id);
@@ -68,7 +71,7 @@ export const ExportDialog = ({
     setStatus('');
     try {
       const result = await window.componentVault.saveStandaloneHtml(createPayload());
-      if (result.ok) setStatus(`Saved to ${result.path}`);
+      if (result.ok) setStatus(`${t(language, 'savedTo')} ${result.path}`);
       else if (!result.cancelled) setError(result.message);
     } catch {
       setError('Could not save the standalone HTML. Your selection is still available.');
@@ -82,7 +85,7 @@ export const ExportDialog = ({
     setError('');
     try {
       await window.componentVault.copyText(createCopyText(exportComponent(active), kind));
-      setStatus('Copied to clipboard');
+      setStatus(t(language, 'copiedToClipboard'));
     } catch {
       setError('Could not copy to the clipboard.');
     }
@@ -95,7 +98,7 @@ export const ExportDialog = ({
       sanitizeDownloadFileName(active.name, '.css'),
       active.css,
     );
-    if (result.ok) setStatus(`Saved to ${result.path}`);
+    if (result.ok) setStatus(`${t(language, 'savedTo')} ${result.path}`);
     else if (!result.cancelled) setError(result.message);
   };
 
@@ -133,19 +136,19 @@ export const ExportDialog = ({
         onKeyDown={trapFocus}
       >
         <header className="import-dialog__header">
-          <div><span className="eyebrow">Portable library</span><h2 id="export-dialog-title">Export standalone HTML</h2></div>
+          <div><span className="eyebrow">{t(language, 'portableLibrary')}</span><h2 id="export-dialog-title">{t(language, 'exportStandaloneHtml')}</h2></div>
           <button ref={closeRef} type="button" className="button button--icon" aria-label="Close export dialog" onClick={onClose}>×</button>
         </header>
         <div className="import-dialog__body export-dialog__body">
           <section className="export-dialog__selection" aria-labelledby="export-components-heading">
-            <div className="import-candidates__heading"><h3 id="export-components-heading">Components</h3><span>{included.length} selected</span></div>
+            <div className="import-candidates__heading"><h3 id="export-components-heading">{t(language, 'components')}</h3><span>{included.length} {t(language, 'selected')}</span></div>
             <ul>
               {components.map((component) => (
                 <li key={component.id} className={active?.id === component.id ? 'is-active' : ''}>
                   <label>
                     <input
                       type="checkbox"
-                      aria-label={`Include ${component.name}`}
+                      aria-label={`${t(language, 'include')} ${component.name}`}
                       checked={includedIds.includes(component.id)}
                       onChange={() => setIncludedIds((current) => current.includes(component.id)
                         ? current.filter((id) => id !== component.id)
@@ -158,14 +161,14 @@ export const ExportDialog = ({
             </ul>
           </section>
           <section className="export-dialog__copy" aria-labelledby="copy-code-heading">
-            <h3 id="copy-code-heading">Copy or save {active?.name ?? 'component'}</h3>
+            <h3 id="copy-code-heading">{t(language, 'copyOrSave')} {active?.name ?? t(language, 'components')}</h3>
             <div className="export-dialog__copy-grid">
-              <button type="button" className="button" onClick={() => void copy('html')}>Copy HTML</button>
-              <button type="button" className="button" onClick={() => void copy('css')}>Copy CSS</button>
-              <button type="button" className="button" onClick={() => void copy('javascript')}>Copy JavaScript</button>
-              <button type="button" className="button" onClick={() => void copy('css-linked-html')}>Copy CSS-linked HTML</button>
-              <button type="button" className="button" onClick={() => void copy('full-code')}>Copy full code</button>
-              <button type="button" className="button" onClick={() => void saveCss()}>Save CSS file</button>
+              <button type="button" className="button" onClick={() => void copy('html')}>{t(language, 'copyHtml')}</button>
+              <button type="button" className="button" onClick={() => void copy('css')}>{t(language, 'copyCss')}</button>
+              <button type="button" className="button" onClick={() => void copy('javascript')}>{t(language, 'copyJavaScript')}</button>
+              <button type="button" className="button" onClick={() => void copy('css-linked-html')}>{t(language, 'copyCssLinkedHtml')}</button>
+              <button type="button" className="button" onClick={() => void copy('full-code')}>{t(language, 'copyFullCode')}</button>
+              <button type="button" className="button" onClick={() => void saveCss()}>{t(language, 'saveCss')}</button>
             </div>
             <p>JavaScript is included only by Copy JavaScript and Copy full code.</p>
           </section>
@@ -173,7 +176,7 @@ export const ExportDialog = ({
           {error && <p className="field-error" role="alert">{error}</p>}
         </div>
         <footer className="import-dialog__footer">
-          <button type="button" className="button" onClick={onClose}>Cancel</button>
+          <button type="button" className="button" onClick={onClose}>{t(language, 'cancel')}</button>
           <button type="button" className="button button--primary" disabled={saving || included.length === 0} onClick={() => void save()}>
             {saving ? 'Preparing export…' : 'Save standalone HTML'}
           </button>
