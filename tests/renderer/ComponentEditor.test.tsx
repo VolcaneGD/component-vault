@@ -88,6 +88,13 @@ afterEach(() => {
 });
 
 describe('ComponentEditor', () => {
+  it('uses a visible component-name input and a short save label', () => {
+    render(<ComponentEditor component={fixture} />);
+
+    expect(screen.getByLabelText('Component name')).toHaveClass('component-editor__name-input');
+    expect(screen.getByRole('button', { name: 'Save' })).toBeVisible();
+  });
+
   it('keeps a newer transient edit dirty across UUID rekey and persists it before showing saved', async () => {
     vi.useFakeTimers();
     let resolveCreate!: (component: ComponentRecord) => void;
@@ -301,7 +308,7 @@ describe('ComponentEditor', () => {
     expect(screen.getByText('Save failed')).toBeInTheDocument();
     expect(screen.getByLabelText('Component name')).toHaveValue('Unsaved button');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Save component' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     await act(() => vi.runAllTimersAsync());
 
     expect(saveComponent).toHaveBeenCalledTimes(2);
@@ -319,7 +326,7 @@ describe('ComponentEditor', () => {
     fireEvent.change(screen.getByLabelText('Allowed HTTPS origins'), {
       target: { value: 'https://cdn.example.test\nhttps://fonts.example.test' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Save component' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     await act(() => vi.runAllTimersAsync());
 
     expect(saveComponent).toHaveBeenLastCalledWith(expect.objectContaining({
@@ -360,7 +367,7 @@ describe('ComponentEditor', () => {
         },
       }}
     />);
-    fireEvent.click(screen.getByRole('button', { name: 'Save component' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     await act(() => vi.runAllTimersAsync());
 
     expect(saveComponent).toHaveBeenLastCalledWith(expect.objectContaining({

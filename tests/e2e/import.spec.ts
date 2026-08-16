@@ -55,7 +55,7 @@ test('opens a focused code draft without persisting name-only input', async () =
     await expect(page.getByText('Add HTML, CSS, or JavaScript before saving.')).toBeVisible();
 
     await page.reload();
-    await expect(page.getByRole('region', { name: 'Empty workbench' })).toBeVisible();
+    await expect(page.getByLabel('Component name')).toHaveValue('');
   } finally {
     await electronApp.close();
     await rm(userDataDirectory, { recursive: true, force: true });

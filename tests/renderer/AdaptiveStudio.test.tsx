@@ -273,7 +273,7 @@ describe('AdaptiveStudio', () => {
     await user.click(screen.getByRole('option', { name: 'Banner' }));
     await waitFor(() => expect(saveComponent).toHaveBeenCalledTimes(1));
     await user.click(screen.getByRole('option', { name: 'Card' }));
-    await user.click(screen.getByRole('button', { name: 'Save component' }));
+    await user.click(screen.getByRole('button', { name: 'Save' }));
 
     await waitFor(() => expect(saveComponent).toHaveBeenCalledTimes(2));
     expect(saveComponent).toHaveBeenLastCalledWith(expect.objectContaining({

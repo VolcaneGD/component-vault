@@ -379,6 +379,26 @@ describe('App shell navigation', () => {
     expect(screen.getByRole('searchbox', { name: 'Search components' })).toBeVisible();
   });
 
+  it('replaces an untouched empty draft with an imported component in the active library', async () => {
+    const libraryId = 'library-1';
+    const draft = useAppStore.getState().beginCodeComponent(libraryId);
+    const imported: ComponentRecord = {
+      ...draft,
+      id: 'component-imported',
+      name: 'Imported fragment',
+      html: '<hr>',
+      sourceType: 'import',
+      originalFileName: 'fragment.html',
+    };
+
+    await useAppStore.getState().acceptSavedComponents([imported]);
+
+    expect(useAppStore.getState()).toMatchObject({
+      components: [imported],
+      selectedComponentId: imported.id,
+    });
+  });
+
   it('keeps every component reachable after selecting all components', async () => {
     const firstLibrary: LibraryRecord = {
       id: 'library-1', name: 'First library', description: '',
@@ -423,6 +443,117 @@ describe('App shell navigation', () => {
     await user.click(screen.getByRole('button', { name: 'Open Second component' }));
     await user.click(screen.getByRole('button', { name: 'A Workbench' }));
     expect(await screen.findByDisplayValue('<button>Second</button>')).toBeVisible();
+  });
+
+  it('shows components beneath the selected library and opens the clicked component', async () => {
+    const library: LibraryRecord = {
+      id: 'library-1', name: 'Design library', description: '',
+      createdAt: '2026-08-15T00:00:00.000Z', updatedAt: '2026-08-15T00:00:00.000Z',
+    };
+    const component: ComponentRecord = {
+      id: 'component-1', libraryId: library.id, name: 'Button component', description: '', category: '', tags: [],
+      html: '<button>Save</button>', css: '', javascript: '', sourceType: 'manual', originalFileName: null,
+      previewPolicy: { allowScripts: false, allowForms: false, allowPopups: false, externalNetworkEnabled: false, allowedOrigins: [] },
+      createdAt: library.createdAt, updatedAt: library.updatedAt, deletedAt: null,
+    };
+    Object.defineProperty(window, 'componentVault', {
+      configurable: true,
+      value: {
+        getAppSettings: async () => ({ ...defaultAppSettings(), lastLibraryId: library.id }),
+        listLibraries: async () => [library],
+        listComponents: async () => [component],
+        saveAppSettings,
+        configurePreviewNetwork: vi.fn().mockResolvedValue(undefined),
+        releasePreviewNetwork: vi.fn().mockResolvedValue(undefined),
+        onPreviewRequestBlocked: vi.fn(() => () => undefined),
+      },
+    });
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole('button', { name: 'Design library' }));
+    await user.click(await screen.findByRole('button', { name: 'Button component' }));
+
+    expect(await screen.findByDisplayValue('<button>Save</button>')).toBeVisible();
+  });
+
+  it('opens an editable draft when an empty library is selected', async () => {
+    const populated: LibraryRecord = {
+      id: 'library-1', name: 'Populated library', description: '',
+      createdAt: '2026-08-15T00:00:00.000Z', updatedAt: '2026-08-15T00:00:00.000Z',
+    };
+    const empty: LibraryRecord = { ...populated, id: 'library-2', name: 'Empty library' };
+    Object.defineProperty(window, 'componentVault', {
+      configurable: true,
+      value: {
+        getAppSettings: async () => ({ ...defaultAppSettings(), lastLibraryId: populated.id }),
+        listLibraries: async () => [populated, empty],
+        listComponents: async (libraryId: string) => libraryId === empty.id ? [] : [],
+        saveAppSettings,
+        configurePreviewNetwork: vi.fn().mockResolvedValue(undefined),
+        releasePreviewNetwork: vi.fn().mockResolvedValue(undefined),
+      },
+    });
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole('button', { name: 'Empty library' }));
+
+    expect(await screen.findByLabelText('Component name')).toBeVisible();
+    expect(useAppStore.getState().selectedComponentId).toMatch(/^draft:/);
+  });
+
+  it('creates a library from the Libraries plus button', async () => {
+    const created: LibraryRecord = {
+      id: 'library-created', name: 'Marketing', description: '',
+      createdAt: '2026-08-15T00:00:00.000Z', updatedAt: '2026-08-15T00:00:00.000Z',
+    };
+    const saveLibrary = vi.fn().mockResolvedValue(created);
+    Object.defineProperty(window, 'componentVault', {
+      configurable: true,
+      value: { saveAppSettings, saveLibrary, listComponents: vi.fn().mockResolvedValue([]) },
+    });
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: 'Add library' }));
+    await user.type(screen.getByLabelText('Library name'), 'Marketing');
+    await user.click(screen.getByRole('button', { name: 'Create library' }));
+
+    expect(saveLibrary).toHaveBeenCalledWith({ name: 'Marketing', description: '' });
+    expect(await screen.findByLabelText('Component name')).toBeVisible();
+  });
+
+  it('adds a tag to the active component from the Tags plus button', async () => {
+    const library: LibraryRecord = {
+      id: 'library-1', name: 'Design library', description: '',
+      createdAt: '2026-08-15T00:00:00.000Z', updatedAt: '2026-08-15T00:00:00.000Z',
+    };
+    const component: ComponentRecord = {
+      id: 'component-1', libraryId: library.id, name: 'Button component', description: '', category: '', tags: [],
+      html: '<button>Save</button>', css: '', javascript: '', sourceType: 'manual', originalFileName: null,
+      previewPolicy: { allowScripts: false, allowForms: false, allowPopups: false, externalNetworkEnabled: false, allowedOrigins: [] },
+      createdAt: library.createdAt, updatedAt: library.updatedAt, deletedAt: null,
+    };
+    const saveComponent = vi.fn().mockResolvedValue({ ...component, tags: ['primary'] });
+    Object.defineProperty(window, 'componentVault', {
+      configurable: true,
+      value: {
+        getAppSettings: async () => ({ ...defaultAppSettings(), lastLibraryId: library.id }),
+        listLibraries: async () => [library], listComponents: async () => [component],
+        saveAppSettings, saveComponent,
+        configurePreviewNetwork: vi.fn().mockResolvedValue(undefined),
+        releasePreviewNetwork: vi.fn().mockResolvedValue(undefined),
+      },
+    });
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole('button', { name: 'Add tag' }));
+    await user.type(screen.getByLabelText('Tag name'), 'primary');
+    await user.click(screen.getAllByRole('button', { name: 'Add tag' }).at(-1)!);
+
+    await waitFor(() => expect(saveComponent).toHaveBeenCalledWith(expect.objectContaining({ tags: ['primary'] })));
   });
 
   it('preserves local view and component selections when settings hydrate late', async () => {

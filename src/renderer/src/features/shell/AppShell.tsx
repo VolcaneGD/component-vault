@@ -9,6 +9,7 @@ import { CommandPalette, type CommandDefinition } from '../commands/CommandPalet
 import { UndoToast } from '../feedback/UndoToast';
 import { AboutDialog } from '../about/AboutDialog';
 import { SettingsDialog } from '../settings/SettingsDialog';
+import { QuickCreateDialog, type QuickCreateKind } from '../library/QuickCreateDialog';
 import { t } from '../../i18n';
 
 const WorkbenchPlaceholder = lazy(() => import('./WorkbenchView'));
@@ -50,11 +51,15 @@ export const AppShell = () => {
     selectedLibraryId,
     selectedComponentId,
     selectedComponentIds,
+    componentsLibraryId,
     hydrate,
     setSelectedLibraryId,
     setViewMode,
     updateLayout,
     beginCodeComponent,
+    ensureEditableComponent,
+    setSelectedComponentId,
+    updateComponentDraft,
     acceptSavedComponents,
     acceptLibrary,
     saveComponent,
@@ -68,9 +73,11 @@ export const AppShell = () => {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [quickCreateKind, setQuickCreateKind] = useState<QuickCreateKind | null>(null);
   const [aboutReturnFocus, setAboutReturnFocus] = useState<HTMLElement | null>(null);
   const [paletteReturnFocus, setPaletteReturnFocus] = useState<HTMLElement | null>(null);
   const paletteButtonRef = useRef<HTMLButtonElement>(null);
+  const editableLibraryRef = useRef<string | null>(null);
   const ModeContent = modeContent[settings.viewMode];
   const exportLibrary = libraries.find((library) => library.id === selectedLibraryId) ?? libraries[0] ?? null;
   const exportComponents = exportLibrary
@@ -84,6 +91,17 @@ export const AppShell = () => {
   useEffect(() => window.componentVault?.onLibraryChanged?.(event => {
     void handleExternalLibraryChanged(event);
   }), [handleExternalLibraryChanged]);
+
+  useEffect(() => {
+    if (!selectedLibraryId || componentsLibraryId !== selectedLibraryId) return;
+    if (components.length > 0) {
+      editableLibraryRef.current = selectedLibraryId;
+      return;
+    }
+    if (editableLibraryRef.current === selectedLibraryId) return;
+    editableLibraryRef.current = selectedLibraryId;
+    ensureEditableComponent(selectedLibraryId);
+  }, [components.length, componentsLibraryId, ensureEditableComponent, selectedLibraryId]);
 
   useEffect(() => {
     const openPalette = (event: KeyboardEvent) => {
@@ -128,6 +146,9 @@ export const AppShell = () => {
         libraries={libraries}
         selectedLibraryId={selectedLibraryId}
         onSelectLibrary={setSelectedLibraryId}
+        onSelectComponent={setSelectedComponentId}
+        onAddLibrary={() => setQuickCreateKind('library')}
+        onAddTag={() => setQuickCreateKind('tag')}
         onNewComponent={() => setImportMode('code')}
         onImport={() => setImportMode('files')}
         onExport={exportLibrary && exportComponents.length > 0 ? () => setExportOpen(true) : undefined}
@@ -198,6 +219,29 @@ export const AppShell = () => {
           onLanguageChange={(language) => updateLayout({ language })}
           returnFocus={aboutReturnFocus}
           onClose={() => setSettingsOpen(false)}
+        />
+      )}
+      {quickCreateKind && (
+        <QuickCreateDialog
+          kind={quickCreateKind}
+          language={settings.language}
+          onClose={() => setQuickCreateKind(null)}
+          onSubmit={async (name) => {
+            if (quickCreateKind === 'library') {
+              const library = await window.componentVault.saveLibrary({ name, description: '' });
+              acceptLibrary(library);
+              ensureEditableComponent(library.id);
+              return;
+            }
+            const component = components.find((item) => item.id === selectedComponentId);
+            if (!component) throw new Error('No component is selected');
+            const tags = Array.from(new Set([...component.tags, name]));
+            const updated = { ...component, tags, updatedAt: new Date().toISOString() };
+            updateComponentDraft(updated);
+            if (!component.id.startsWith('draft:')) {
+              await saveComponent(toSaveInput(updated));
+            }
+          }}
         />
       )}
       <div className="undo-toast-stack" aria-label={t(settings.language, 'recentDeletions')}>

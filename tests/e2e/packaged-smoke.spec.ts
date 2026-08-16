@@ -61,7 +61,7 @@ packagedTest('the packaged app restores a saved component and normal window boun
     const editor = firstRun.page.locator('.monaco-editor .native-edit-context');
     await editor.focus();
     await firstRun.page.keyboard.insertText('<button type="button">Persisted</button>');
-    await firstRun.page.getByRole('button', { name: 'Save component' }).click();
+    await firstRun.page.getByRole('button', { name: 'Save' }).click();
     await expect.poll(() => firstRun.page.evaluate(async () => {
       const library = (await window.componentVault.listLibraries())
         .find((item) => item.name === 'Packaged smoke library');

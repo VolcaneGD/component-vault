@@ -58,7 +58,7 @@ test('persists the complete create, import, edit, view, copy, export, and re-imp
     await fillActiveMonaco(page, 'document.querySelector("#launch")?.setAttribute("data-ready", "yes");');
     await page.getByText('Details & preview permissions').click();
     await page.getByText('Scripts', { exact: true }).click();
-    await page.getByRole('button', { name: 'Save component' }).click();
+    await page.getByRole('button', { name: 'Save' }).click();
     await expect(page.frameLocator('iframe[title="Component preview"]').locator('#launch'))
       .toHaveAttribute('data-ready', 'yes');
 

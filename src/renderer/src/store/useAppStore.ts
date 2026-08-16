@@ -48,6 +48,7 @@ interface AppStore {
   updateComponentDraft: (component: ComponentRecord) => void;
   handleExternalLibraryChanged: (event: LibraryChangedEvent) => Promise<void>;
   beginCodeComponent: (libraryId: string) => ComponentRecord;
+  ensureEditableComponent: (libraryId: string) => ComponentRecord;
   consumeDraftOrigin: (componentId: string, draftOriginId: string) => void;
   acceptSavedComponents: (components: ComponentRecord[]) => Promise<void>;
   acceptLibrary: (library: LibraryRecord) => void;
@@ -424,6 +425,17 @@ export const useAppStore = create<AppStore>((set, get) => ({
     persist({ viewMode: 'workbench', lastLibraryId: libraryId, lastComponentId: null });
     return draft;
   },
+  ensureEditableComponent: (libraryId) => {
+    const state = get();
+    const existing = state.componentsLibraryId === libraryId
+      ? state.components.find((component) => component.libraryId === libraryId)
+      : undefined;
+    if (existing) {
+      get().setSelectedComponentId(existing.id);
+      return existing;
+    }
+    return get().beginCodeComponent(libraryId);
+  },
   consumeDraftOrigin: (componentId, draftOriginId) => {
     set((state) => {
       if (state.draftOrigins[componentId] !== draftOriginId) return state;
@@ -441,11 +453,20 @@ export const useAppStore = create<AppStore>((set, get) => ({
     if (get().componentsLibraryId === last.libraryId) {
       set((state) => {
         const existingIds = new Set(state.components.map((component) => component.id));
+        const selected = state.components.find((component) => component.id === state.selectedComponentId);
+        const isUntouchedEmptyDraft = Boolean(selected
+          && selected.id.startsWith('draft:')
+          && !state.dirtyComponentIds.includes(selected.id)
+          && !selected.name.trim()
+          && !selected.html.trim()
+          && !selected.css.trim()
+          && !selected.javascript.trim());
         return {
           components: [
-            ...state.components,
+            ...(isUntouchedEmptyDraft ? state.components.filter((component) => component.id !== selected!.id) : state.components),
             ...savedComponents.filter((component) => !existingIds.has(component.id)),
           ],
+          selectedComponentId: isUntouchedEmptyDraft ? last.id : state.selectedComponentId,
           mutationVersion: state.mutationVersion + 1,
         };
       });

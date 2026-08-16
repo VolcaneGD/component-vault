@@ -233,7 +233,7 @@ export const ComponentEditor = ({
           <label>
             <span className="sr-only">{t(language, 'componentName')}</span>
             <input
-              className="component-editor__name"
+              className="component-editor__name component-editor__name-input"
               aria-label={t(language, 'componentName')}
               value={draft.name}
               onChange={(event) => updateDraft((current) => ({ ...current, name: event.target.value }))}
@@ -245,7 +245,7 @@ export const ComponentEditor = ({
         </div>
         <div className="component-editor__actions">
           <button type="button" className="button button--primary" onClick={() => void persistDraft(true)}>
-            {t(language, 'saveComponent')}
+            {t(language, 'save')}
           </button>
           <div className="component-editor__action-menu">
             <button
