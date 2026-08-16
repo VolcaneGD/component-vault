@@ -14,16 +14,20 @@ import type { DatabaseContext } from '../database/database';
 export interface LibraryService {
   listLibraries: () => LibraryRecord[];
   saveLibrary: (library: LibrarySaveInput) => LibraryRecord;
+  saveLibraryIfRevision: (library: LibrarySaveInput, expectedRevision: number) => LibraryRecord;
   deleteLibrary: (libraryId: string) => boolean;
+  deleteLibraryIfRevision: (libraryId: string, expectedRevision: number) => boolean;
   listComponents: (libraryId: string) => ComponentRecord[];
   getComponent: (componentId: string) => ComponentRecord | undefined;
   saveComponent: (component: ComponentSaveInput) => ComponentRecord;
   saveComponentIfRevision: (component: ComponentSaveInput, expectedRevision: number) => ComponentRecord;
   deleteComponent: (componentId: string) => SoftDeleteToken | null;
+  deleteComponentIfRevision: (componentId: string, expectedRevision: number) => SoftDeleteToken | null;
   restoreDeletedComponent: (token: SoftDeleteToken) => ComponentRecord | undefined;
   finalizeDeletedComponent: (token: SoftDeleteToken) => boolean;
   purgeExpiredDeletedComponents: () => number;
   reorderComponents: (libraryId: string, componentIds: string[]) => void;
+  reorderComponentsIfRevision: (libraryId: string, componentIds: string[], expectedRevision: number) => void;
   searchComponents: (libraryId: string, query: string) => ComponentRecord[];
   startSession: () => RecoverySnapshot | null;
   getRecoverySnapshot: () => RecoverySnapshot | null;
@@ -73,7 +77,7 @@ export const createLibraryService = (
     'SELECT * FROM libraries ORDER BY created_at ASC, id ASC',
   ).all().map(toLibrary);
 
-  const saveLibrary = (library: LibrarySaveInput): LibraryRecord => {
+  const saveLibraryInternal = (library: LibrarySaveInput): LibraryRecord => {
     const savedAt = now().toISOString();
     const id = library.id ?? randomUUID();
     const existing = db.prepare('SELECT id FROM libraries WHERE id = ?').get(id);
@@ -87,8 +91,20 @@ export const createLibraryService = (
     return toLibrary(db.prepare('SELECT * FROM libraries WHERE id = ?').get(id));
   };
 
-  const deleteLibrary = (libraryId: string): boolean =>
+  const saveLibrary = db.transaction(saveLibraryInternal);
+  const saveLibraryIfRevision = db.transaction((library: LibrarySaveInput, expectedRevision: number): LibraryRecord => {
+    if (!library.id) throw new Error('A library id is required for a conditional save');
+    assertLibraryRevision(library.id, expectedRevision);
+    return saveLibraryInternal(library);
+  });
+
+  const deleteLibraryInternal = (libraryId: string): boolean =>
     db.prepare('DELETE FROM libraries WHERE id = ?').run(libraryId).changes > 0;
+  const deleteLibrary = db.transaction(deleteLibraryInternal);
+  const deleteLibraryIfRevision = db.transaction((libraryId: string, expectedRevision: number): boolean => {
+    assertLibraryRevision(libraryId, expectedRevision);
+    return deleteLibraryInternal(libraryId);
+  });
 
   const getComponent = (componentId: string): ComponentRecord | undefined => {
     const row = db.prepare(
@@ -109,8 +125,8 @@ export const createLibraryService = (
       'SELECT component_id FROM component_deletion_tombstones WHERE component_id = ?',
     ).get(id);
     if (tombstone) throw new Error('Component is deleted');
-    const existing = db.prepare('SELECT id, deleted_at, revision FROM components WHERE id = ?').get(id) as
-      | { id: string; deleted_at: string | null; revision: number }
+    const existing = db.prepare('SELECT id, library_id, deleted_at, revision FROM components WHERE id = ?').get(id) as
+      | { id: string; library_id: string; deleted_at: string | null; revision: number }
       | undefined;
     if (existing?.deleted_at) throw new Error('Component is deleted');
     if (existing) {
@@ -152,6 +168,9 @@ export const createLibraryService = (
       });
     }
 
+    touchLibrary(component.libraryId);
+    if (existing && existing.library_id !== component.libraryId) touchLibrary(existing.library_id);
+
     return readComponent(db, db.prepare('SELECT * FROM components WHERE id = ?').get(id) as ComponentRow);
   };
 
@@ -166,20 +185,27 @@ export const createLibraryService = (
     return saveComponentInternal(component);
   });
 
-  const deleteComponent = db.transaction((componentId: string): SoftDeleteToken | null => {
+  const deleteComponentInternal = (componentId: string): SoftDeleteToken | null => {
     const deletedAt = now().toISOString();
     const result = db.prepare(
-      'UPDATE components SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL',
+      'UPDATE components SET deleted_at = ?, revision = revision + 1 WHERE id = ? AND deleted_at IS NULL',
     ).run(deletedAt, componentId);
     if (result.changes === 0) return null;
     db.prepare(`INSERT INTO component_deletion_tombstones (component_id, deleted_at) VALUES (?, ?)
       ON CONFLICT(component_id) DO UPDATE SET deleted_at = excluded.deleted_at`)
       .run(componentId, deletedAt);
+    const component = db.prepare('SELECT library_id FROM components WHERE id = ?').get(componentId) as { library_id: string };
+    touchLibrary(component.library_id);
     return {
       componentId,
       deletedAt,
       expiresAt: new Date(Date.parse(deletedAt) + DELETE_UNDO_WINDOW_MS).toISOString(),
     };
+  };
+  const deleteComponent = db.transaction(deleteComponentInternal);
+  const deleteComponentIfRevision = db.transaction((componentId: string, expectedRevision: number): SoftDeleteToken | null => {
+    assertComponentRevision(componentId, expectedRevision);
+    return deleteComponentInternal(componentId);
   });
 
   const restoreDeletedComponent = db.transaction((token: SoftDeleteToken): ComponentRecord | undefined => {
@@ -190,7 +216,9 @@ export const createLibraryService = (
     if (restored.changes === 0) return undefined;
     db.prepare('DELETE FROM component_deletion_tombstones WHERE component_id = ? AND deleted_at = ?')
       .run(token.componentId, token.deletedAt);
-    return getComponent(token.componentId);
+    const component = getComponent(token.componentId);
+    if (component) touchLibrary(component.libraryId);
+    return component;
   });
 
   const finalizeDeletedComponent = (token: SoftDeleteToken): boolean => {
@@ -205,7 +233,7 @@ export const createLibraryService = (
       .run(cutoff).changes;
   };
 
-  const reorderComponents = db.transaction((libraryId: string, componentIds: string[]): void => {
+  const reorderComponentsInternal = (libraryId: string, componentIds: string[]): void => {
     const actualIds = db.prepare(
       'SELECT id FROM components WHERE library_id = ? AND deleted_at IS NULL ORDER BY sort_order, created_at, id',
     ).all(libraryId).map(row => (row as { id: string }).id);
@@ -216,6 +244,12 @@ export const createLibraryService = (
     }
     const update = db.prepare('UPDATE components SET sort_order = ? WHERE id = ? AND library_id = ?');
     componentIds.forEach((id, index) => update.run(index, id, libraryId));
+    touchLibrary(libraryId);
+  };
+  const reorderComponents = db.transaction(reorderComponentsInternal);
+  const reorderComponentsIfRevision = db.transaction((libraryId: string, componentIds: string[], expectedRevision: number): void => {
+    assertLibraryRevision(libraryId, expectedRevision);
+    reorderComponentsInternal(libraryId, componentIds);
   });
 
   const searchComponents = (libraryId: string, query: string): ComponentRecord[] => {
@@ -264,10 +298,32 @@ export const createLibraryService = (
   };
 
   return {
-    listLibraries, saveLibrary, deleteLibrary, listComponents, getComponent, saveComponent, saveComponentIfRevision,
-    deleteComponent, restoreDeletedComponent, finalizeDeletedComponent, purgeExpiredDeletedComponents,
-    reorderComponents, searchComponents, startSession, getRecoverySnapshot, ackRecoverySnapshot, markCleanShutdown,
+    listLibraries, saveLibrary, saveLibraryIfRevision, deleteLibrary, deleteLibraryIfRevision,
+    listComponents, getComponent, saveComponent, saveComponentIfRevision,
+    deleteComponent, deleteComponentIfRevision, restoreDeletedComponent, finalizeDeletedComponent, purgeExpiredDeletedComponents,
+    reorderComponents, reorderComponentsIfRevision, searchComponents, startSession, getRecoverySnapshot, ackRecoverySnapshot, markCleanShutdown,
   };
+
+  function assertLibraryRevision(libraryId: string, expectedRevision: number): void {
+    const current = db.prepare('SELECT revision FROM libraries WHERE id = ?').get(libraryId) as
+      | { revision: number }
+      | undefined;
+    if (!current) throw new Error('Library is not found');
+    if (current.revision !== expectedRevision) throw new ConflictError(current.revision);
+  }
+
+  function assertComponentRevision(componentId: string, expectedRevision: number): void {
+    const current = db.prepare('SELECT revision, deleted_at FROM components WHERE id = ?').get(componentId) as
+      | { revision: number; deleted_at: string | null }
+      | undefined;
+    if (!current || current.deleted_at !== null) throw new Error('Component is deleted');
+    if (current.revision !== expectedRevision) throw new ConflictError(current.revision);
+  }
+
+  function touchLibrary(libraryId: string): void {
+    db.prepare('UPDATE libraries SET revision = revision + 1, updated_at = ? WHERE id = ?')
+      .run(now().toISOString(), libraryId);
+  }
 };
 
 const isAuthenticDeleteToken = (token: SoftDeleteToken): boolean => {

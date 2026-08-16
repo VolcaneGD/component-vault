@@ -230,6 +230,22 @@ describe('LibraryService', () => {
     expect(failure).toMatchObject({ code: 'conflict', currentRevision: guiSaved.revision });
     expect(service.getComponent(original.id)?.html).toBe('<button>GUI edit</button>');
   });
+
+  it('rejects stale delete and reorder requests without changing the library', () => {
+    const service = createLibraryService(openTestDatabase());
+    const library = service.saveLibrary({ name: 'Revision actions', description: '' });
+    const first = service.saveComponent(componentInput(library.id, 'First'));
+    const second = service.saveComponent(componentInput(library.id, 'Second'));
+    const current = service.saveComponent({ ...first, html: '<button>GUI edit</button>' });
+
+    const staleDelete = captureFailure(() => service.deleteComponentIfRevision(first.id, first.revision!));
+    const staleReorder = captureFailure(() =>
+      service.reorderComponentsIfRevision(library.id, [second.id, first.id], library.revision!),
+    );
+    expect(staleDelete).toMatchObject({ code: 'conflict', currentRevision: current.revision });
+    expect(staleReorder).toMatchObject({ code: 'conflict' });
+    expect(service.listComponents(library.id).map(component => component.id)).toEqual([first.id, second.id]);
+  });
 });
 
 describe('SettingsService', () => {
@@ -264,3 +280,12 @@ const componentInput = (libraryId: string, name: string) => ({
     externalNetworkEnabled: false, allowedOrigins: [],
   },
 });
+
+const captureFailure = (operation: () => unknown): unknown => {
+  try {
+    operation();
+  } catch (error) {
+    return error;
+  }
+  throw new Error('Expected operation to fail');
+};
