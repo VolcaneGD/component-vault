@@ -14,41 +14,46 @@ const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
 const MATERIAL_CONFIDENCE_GAP = 20;
 
 export const decodeHtml = (bytes: Buffer): { text: string; encoding: 'utf-8' | 'shift_jis' } => {
+  const decoded = (text: string, encoding: 'utf-8' | 'shift_jis') => ({
+    text: text.replace(/\r\n?/g, '\n'),
+    encoding,
+  });
   if (bytes.subarray(0, 3).equals(Buffer.from([0xef, 0xbb, 0xbf]))) {
-    return { text: bytes.subarray(3).toString('utf8'), encoding: 'utf-8' };
+    return decoded(bytes.subarray(3).toString('utf8'), 'utf-8');
   }
 
   const declaredEncoding = declaredHtmlEncoding(bytes);
   if (declaredEncoding === 'shift_jis') {
-    return { text: iconv.decode(bytes, 'shift_jis'), encoding: 'shift_jis' };
+    return decoded(iconv.decode(bytes, 'shift_jis'), 'shift_jis');
   }
   if (declaredEncoding === 'utf-8') {
-    return { text: bytes.toString('utf8'), encoding: 'utf-8' };
+    return decoded(bytes.toString('utf8'), 'utf-8');
   }
 
   const encoding = detectFallbackEncoding(bytes);
   return encoding === 'utf-8'
-    ? { text: bytes.toString('utf8'), encoding }
-    : { text: iconv.decode(bytes, 'shift_jis'), encoding };
+    ? decoded(bytes.toString('utf8'), encoding)
+    : decoded(iconv.decode(bytes, 'shift_jis'), encoding);
 };
 
 export const normalizeHtmlImport = (fileName: string, text: string): ComponentDraft => {
+  const normalizedText = text.replace(/\r\n?/g, '\n');
   const originalFileName = basename(fileName);
-  const isDocument = /<!doctype\b|<html\b|<head\b|<body\b/i.test(text);
-  const documentBody = isDocument ? extractBody(text) : text;
-  const styleBlocks = isDocument ? extractBlocks(text, 'style') : extractTopLevelBlocks(text, 'style').blocks;
-  const scriptBlocks = isDocument ? extractBlocks(text, 'script') : extractTopLevelBlocks(text, 'script').blocks;
+  const isDocument = /<!doctype\b|<html\b|<head\b|<body\b/i.test(normalizedText);
+  const documentBody = isDocument ? extractBody(normalizedText) : normalizedText;
+  const styleBlocks = isDocument ? extractBlocks(normalizedText, 'style') : extractTopLevelBlocks(normalizedText, 'style').blocks;
+  const scriptBlocks = isDocument ? extractBlocks(normalizedText, 'script') : extractTopLevelBlocks(normalizedText, 'script').blocks;
   const styles = styleContents(styleBlocks);
   const scripts = executableScriptContents(scriptBlocks);
   const html = isDocument
     ? removeBlocks(documentBody, ['style', 'script'])
-    : removeRanges(text, [
-      ...extractTopLevelBlocks(text, 'style').ranges,
-      ...extractTopLevelBlocks(text, 'script').ranges,
+    : removeRanges(normalizedText, [
+      ...extractTopLevelBlocks(normalizedText, 'style').ranges,
+      ...extractTopLevelBlocks(normalizedText, 'script').ranges,
     ]);
 
   return {
-    name: importName(text, originalFileName),
+    name: importName(normalizedText, originalFileName),
     description: '',
     category: '',
     html,
