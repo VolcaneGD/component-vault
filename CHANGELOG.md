@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.5 - 2026-08-17
+
+- Show components nested beneath their selected library for direct editing.
+- Open an editable draft immediately when a selected library is empty.
+- Add working library and component-tag creation controls in the sidebar.
+- Improve component-name visibility and shorten the save action.
+
 ## 1.0.1 - 2026-08-16
 
 - Replace the Windows and website icon with a saved HTML component archive design.
