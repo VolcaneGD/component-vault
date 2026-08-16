@@ -29,4 +29,21 @@ describe('built preload path', () => {
 
     expect(capturedOptions?.webPreferences?.preload).toSatisfy(existsSync);
   });
+
+  it('uses a dark native title bar overlay on Windows', () => {
+    createApplicationWindow({
+      BrowserWindow: BrowserWindowDouble,
+      runtimeDirectory: resolve(process.cwd(), 'out', 'main'),
+    });
+
+    expect(capturedOptions).toMatchObject({
+      autoHideMenuBar: true,
+      backgroundColor: '#090d1a',
+      titleBarStyle: 'hidden',
+      titleBarOverlay: {
+        color: '#090d1a',
+        symbolColor: '#edf1ff',
+      },
+    });
+  });
 });

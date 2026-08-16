@@ -1,6 +1,13 @@
-import type { LibraryRecord } from '../../../../shared/contracts';
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import type { ComponentRecord, LibraryRecord } from '../../../../shared/contracts';
 import { useAppStore } from '../../store/useAppStore';
 import { t } from '../../i18n';
+
+export type SidebarContextTarget =
+  | { kind: 'library'; value: LibraryRecord }
+  | { kind: 'component'; value: ComponentRecord };
+
+export type SidebarContextAction = 'open' | 'rename' | 'duplicate' | 'delete';
 
 interface LibrarySidebarProps {
   libraries: LibraryRecord[];
@@ -9,6 +16,7 @@ interface LibrarySidebarProps {
   onSelectComponent?: (componentId: string) => void;
   onAddLibrary?: () => void;
   onAddTag?: () => void;
+  onContextAction?: (target: SidebarContextTarget, action: SidebarContextAction) => void;
   onNewComponent?: () => void;
   onImport?: () => void;
   onExport?: () => void;
@@ -22,6 +30,7 @@ export const LibrarySidebar = ({
   onSelectComponent,
   onAddLibrary,
   onAddTag,
+  onContextAction,
   onNewComponent,
   onImport,
   onExport,
@@ -34,6 +43,40 @@ export const LibrarySidebar = ({
   const libraryComponents = selectedLibraryId
     ? components.filter((component) => component.libraryId === selectedLibraryId)
     : [];
+  const [contextTarget, setContextTarget] = useState<SidebarContextTarget | null>(null);
+  const [contextPosition, setContextPosition] = useState({ x: 0, y: 0 });
+  const contextMenuRef = useRef<HTMLDivElement>(null);
+  const firstContextMenuItemRef = useRef<HTMLButtonElement>(null);
+  const contextOriginRef = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    const dismiss = (event: MouseEvent) => {
+      if (!contextMenuRef.current?.contains(event.target as Node)) setContextTarget(null);
+    };
+    window.addEventListener('mousedown', dismiss);
+    return () => window.removeEventListener('mousedown', dismiss);
+  }, []);
+
+  useEffect(() => {
+    if (!contextTarget) return;
+    window.requestAnimationFrame(() => firstContextMenuItemRef.current?.focus());
+  }, [contextTarget]);
+
+  const openContextMenu = (target: SidebarContextTarget, x: number, y: number, origin: HTMLButtonElement) => {
+    contextOriginRef.current = origin;
+    setContextTarget(target);
+    setContextPosition({ x, y });
+  };
+  const onItemKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>, target: SidebarContextTarget) => {
+    if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return;
+    event.preventDefault();
+    const bounds = event.currentTarget.getBoundingClientRect();
+    openContextMenu(target, bounds.left + 12, bounds.bottom + 4, event.currentTarget);
+  };
+  const triggerContextAction = (action: SidebarContextAction) => {
+    if (contextTarget) onContextAction?.(contextTarget, action);
+    setContextTarget(null);
+  };
 
   return (
     <aside className="library-sidebar">
@@ -79,6 +122,11 @@ export const LibrarySidebar = ({
               className="library-sidebar__item"
               aria-pressed={selectedLibraryId === library.id}
               onClick={() => onSelectLibrary(library.id)}
+              onContextMenu={(event) => {
+                event.preventDefault();
+                openContextMenu({ kind: 'library', value: library }, event.clientX, event.clientY, event.currentTarget);
+              }}
+              onKeyDown={(event) => onItemKeyDown(event, { kind: 'library', value: library })}
             >
               {library.name}
             </button>
@@ -91,6 +139,11 @@ export const LibrarySidebar = ({
                     className="library-sidebar__component"
                     aria-pressed={selectedComponentId === component.id}
                     onClick={() => onSelectComponent?.(component.id)}
+                    onContextMenu={(event) => {
+                      event.preventDefault();
+                      openContextMenu({ kind: 'component', value: component }, event.clientX, event.clientY, event.currentTarget);
+                    }}
+                    onKeyDown={(event) => onItemKeyDown(event, { kind: 'component', value: component })}
                   >
                     {component.name || translate('componentName')}
                   </button>
@@ -125,6 +178,31 @@ export const LibrarySidebar = ({
         </div>
       </section>
     </nav>
+
+    {contextTarget && (
+      <div
+        ref={contextMenuRef}
+        className="library-context-menu"
+        role="menu"
+        aria-label={contextTarget.kind === 'library' ? contextTarget.value.name : contextTarget.value.name}
+        style={{ left: contextPosition.x, top: contextPosition.y }}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') {
+            setContextTarget(null);
+            contextOriginRef.current?.focus();
+          }
+        }}
+      >
+        <button ref={firstContextMenuItemRef} type="button" role="menuitem" onClick={() => triggerContextAction('open')}>{translate('open')}</button>
+        <button type="button" role="menuitem" onClick={() => triggerContextAction('rename')}>
+          {translate(contextTarget.kind === 'library' ? 'renameLibrary' : 'renameComponent')}
+        </button>
+        {contextTarget.kind === 'component' && <button type="button" role="menuitem" onClick={() => triggerContextAction('duplicate')}>{translate('duplicate')}</button>}
+        <button type="button" role="menuitem" className="danger-action" onClick={() => triggerContextAction('delete')}>
+          {translate(contextTarget.kind === 'library' ? 'deleteLibrary' : 'deleteComponent')}
+        </button>
+      </div>
+    )}
 
     <div className="library-sidebar__footer" aria-label={translate('libraryActions')}>
       <button type="button" onClick={onImport}>{translate('import')}</button>

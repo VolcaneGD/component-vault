@@ -67,9 +67,21 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   grid-template-columns: clamp(13.5rem, 21vw, 18rem) minmax(0, 1fr);
   width: 100vw;
   height: 100vh;
+  padding-top: 2rem;
   min-width: 0;
   min-height: 100vh;
   overflow: hidden;
+}
+
+.native-titlebar-drag-region {
+  position: fixed;
+  z-index: 500;
+  top: 0;
+  right: 9rem;
+  left: 0;
+  height: 2rem;
+  background: var(--canvas);
+  -webkit-app-region: drag;
 }
 
 .library-sidebar {
@@ -197,6 +209,29 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 }
 .library-sidebar__component:hover { color: var(--text); background: var(--surface-hover); }
 .library-sidebar__component[aria-pressed="true"] { color: var(--text); border-color: #786aa8; background: #2b2455; }
+
+.library-context-menu {
+  position: fixed;
+  z-index: 60;
+  display: grid;
+  min-width: 11rem;
+  padding: 0.3rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+  box-shadow: 0 0.9rem 2.4rem rgb(0 0 0 / 45%);
+}
+.library-context-menu button {
+  min-height: 2rem;
+  padding: 0 0.6rem;
+  border: 0;
+  border-radius: calc(var(--radius-sm) - 2px);
+  color: var(--text);
+  background: transparent;
+  text-align: left;
+  font-size: 0.78rem;
+}
+.library-context-menu button:hover, .library-context-menu button:focus-visible { background: var(--surface-hover); outline: none; }
 
 .tag-list { display: flex; flex-wrap: wrap; gap: var(--space-1); }
 .tag-list button { padding: 0.25rem 0.5rem; color: var(--muted); background: var(--surface); font-size: 0.75rem; }

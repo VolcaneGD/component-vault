@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ComponentType, type LazyExoticComponent } from 'react';
 import type { ComponentRecord, ComponentSaveInput, ViewMode } from '../../../../shared/contracts';
-import { LibrarySidebar } from '../library/LibrarySidebar';
+import { LibrarySidebar, type SidebarContextAction, type SidebarContextTarget } from '../library/LibrarySidebar';
 import { useAppStore } from '../../store/useAppStore';
 import { ViewSwitcher } from './ViewSwitcher';
 import { ImportDialog } from '../import/ImportDialog';
@@ -10,6 +10,7 @@ import { UndoToast } from '../feedback/UndoToast';
 import { AboutDialog } from '../about/AboutDialog';
 import { SettingsDialog } from '../settings/SettingsDialog';
 import { QuickCreateDialog, type QuickCreateKind } from '../library/QuickCreateDialog';
+import { DeleteLibraryDialog, RenameDialog } from '../library/ContextActionDialog';
 import { t } from '../../i18n';
 
 const WorkbenchPlaceholder = lazy(() => import('./WorkbenchView'));
@@ -62,7 +63,10 @@ export const AppShell = () => {
     updateComponentDraft,
     acceptSavedComponents,
     acceptLibrary,
+    deleteLibrary,
     saveComponent,
+    duplicateComponent,
+    deleteComponent,
     pendingDeletions,
     undoDelete,
     expireDeletion,
@@ -74,6 +78,8 @@ export const AppShell = () => {
   const [aboutOpen, setAboutOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [quickCreateKind, setQuickCreateKind] = useState<QuickCreateKind | null>(null);
+  const [renameTarget, setRenameTarget] = useState<SidebarContextTarget | null>(null);
+  const [deleteLibraryTarget, setDeleteLibraryTarget] = useState<SidebarContextTarget | null>(null);
   const [aboutReturnFocus, setAboutReturnFocus] = useState<HTMLElement | null>(null);
   const [paletteReturnFocus, setPaletteReturnFocus] = useState<HTMLElement | null>(null);
   const paletteButtonRef = useRef<HTMLButtonElement>(null);
@@ -142,6 +148,7 @@ export const AppShell = () => {
 
   return (
     <div className="app-shell">
+      <div className="native-titlebar-drag-region" aria-hidden="true" />
       <LibrarySidebar
         libraries={libraries}
         selectedLibraryId={selectedLibraryId}
@@ -149,6 +156,29 @@ export const AppShell = () => {
         onSelectComponent={setSelectedComponentId}
         onAddLibrary={() => setQuickCreateKind('library')}
         onAddTag={() => setQuickCreateKind('tag')}
+        onContextAction={(target: SidebarContextTarget, action: SidebarContextAction) => {
+          if (action === 'open') {
+            if (target.kind === 'library') setSelectedLibraryId(target.value.id);
+            else {
+              setSelectedComponentId(target.value.id);
+              setViewMode('workbench');
+            }
+            return;
+          }
+          if (action === 'rename') {
+            setRenameTarget(target);
+            return;
+          }
+          if (action === 'duplicate' && target.kind === 'component') {
+            void duplicateComponent(target.value);
+            return;
+          }
+          if (action === 'delete' && target.kind === 'component') {
+            void deleteComponent(target.value.id);
+            return;
+          }
+          if (action === 'delete' && target.kind === 'library') setDeleteLibraryTarget(target);
+        }}
         onNewComponent={() => setImportMode('code')}
         onImport={() => setImportMode('files')}
         onExport={exportLibrary && exportComponents.length > 0 ? () => setExportOpen(true) : undefined}
@@ -242,6 +272,30 @@ export const AppShell = () => {
               await saveComponent(toSaveInput(updated));
             }
           }}
+        />
+      )}
+      {renameTarget && (
+        <RenameDialog
+          language={settings.language}
+          initialName={renameTarget.value.name}
+          target={renameTarget.kind}
+          onClose={() => setRenameTarget(null)}
+          onConfirm={async (name) => {
+            if (renameTarget.kind === 'library') {
+              acceptLibrary(await window.componentVault.saveLibrary({ ...renameTarget.value, name }));
+              return;
+            }
+            const renamed = { ...renameTarget.value, name, updatedAt: new Date().toISOString() };
+            updateComponentDraft(renamed);
+            await saveComponent(toSaveInput(renamed));
+          }}
+        />
+      )}
+      {deleteLibraryTarget?.kind === 'library' && (
+        <DeleteLibraryDialog
+          language={settings.language}
+          onClose={() => setDeleteLibraryTarget(null)}
+          onConfirm={() => deleteLibrary(deleteLibraryTarget.value.id)}
         />
       )}
       <div className="undo-toast-stack" aria-label={t(settings.language, 'recentDeletions')}>

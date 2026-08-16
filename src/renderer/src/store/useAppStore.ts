@@ -52,6 +52,7 @@ interface AppStore {
   consumeDraftOrigin: (componentId: string, draftOriginId: string) => void;
   acceptSavedComponents: (components: ComponentRecord[]) => Promise<void>;
   acceptLibrary: (library: LibraryRecord) => void;
+  deleteLibrary: (libraryId: string) => Promise<void>;
   saveComponent: (component: ComponentSaveInput) => Promise<ComponentRecord>;
   duplicateComponent: (component: ComponentRecord) => Promise<ComponentRecord>;
   deleteComponent: (componentId: string) => Promise<void>;
@@ -503,6 +504,32 @@ export const useAppStore = create<AppStore>((set, get) => ({
       mutationVersion: state.mutationVersion + 1,
     }));
     persist({ lastLibraryId: library.id });
+  },
+  deleteLibrary: async (libraryId) => {
+    const deleted = await window.componentVault.deleteLibrary(libraryId);
+    if (!deleted) throw new Error('Library could not be deleted');
+    set((state) => {
+      const selectedComponentWasDeleted = state.components.some((component) =>
+        component.id === state.selectedComponentId && component.libraryId === libraryId);
+      const wasActive = state.selectedLibraryId === libraryId
+        || state.componentsLibraryId === libraryId
+        || selectedComponentWasDeleted;
+      return {
+        libraries: state.libraries.filter((library) => library.id !== libraryId),
+        components: state.components.filter((component) => component.libraryId !== libraryId),
+        componentsLibraryId: state.componentsLibraryId === libraryId ? null : state.componentsLibraryId,
+        selectedLibraryId: state.selectedLibraryId === libraryId ? null : state.selectedLibraryId,
+        selectedComponentId: wasActive ? null : state.selectedComponentId,
+        selectedComponentIds: state.selectedComponentIds.filter((componentId) =>
+          state.components.some((component) => component.id === componentId && component.libraryId !== libraryId)),
+        pendingDeletions: state.pendingDeletions.filter((pending) => pending.component.libraryId !== libraryId),
+        dirtyComponentIds: wasActive ? [] : state.dirtyComponentIds,
+        draftOrigins: wasActive ? {} : state.draftOrigins,
+        mutationVersion: state.mutationVersion + 1,
+      };
+    });
+    const next = get();
+    persist({ lastLibraryId: next.selectedLibraryId, lastComponentId: next.selectedComponentId });
   },
   saveComponent: async (component) => {
     if (component.id?.startsWith('draft:')) {

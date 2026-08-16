@@ -556,6 +556,101 @@ describe('App shell navigation', () => {
     await waitFor(() => expect(saveComponent).toHaveBeenCalledWith(expect.objectContaining({ tags: ['primary'] })));
   });
 
+  it('renames a component from its context menu', async () => {
+    const library: LibraryRecord = {
+      id: 'library-1', name: 'Design library', description: '',
+      createdAt: '2026-08-17T00:00:00.000Z', updatedAt: '2026-08-17T00:00:00.000Z',
+    };
+    const component: ComponentRecord = {
+      id: 'component-1', libraryId: library.id, name: 'Button component', description: '', category: '', tags: [],
+      html: '<button>Save</button>', css: '', javascript: '', sourceType: 'manual', originalFileName: null,
+      previewPolicy: { allowScripts: false, allowForms: false, allowPopups: false, externalNetworkEnabled: false, allowedOrigins: [] },
+      createdAt: library.createdAt, updatedAt: library.updatedAt, deletedAt: null,
+    };
+    const saveComponent = vi.fn().mockResolvedValue({ ...component, name: 'Primary button' });
+    Object.defineProperty(window, 'componentVault', {
+      configurable: true,
+      value: {
+        getAppSettings: async () => ({ ...defaultAppSettings(), lastLibraryId: library.id }),
+        listLibraries: async () => [library], listComponents: async () => [component],
+        saveAppSettings, saveComponent,
+        configurePreviewNetwork: vi.fn().mockResolvedValue(undefined),
+        releasePreviewNetwork: vi.fn().mockResolvedValue(undefined),
+      },
+    });
+    const user = userEvent.setup();
+    render(<App />);
+
+    fireEvent.contextMenu(await screen.findByRole('button', { name: 'Button component' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Rename component' }));
+    await user.clear(screen.getByLabelText('New name'));
+    await user.type(screen.getByLabelText('New name'), 'Primary button');
+    await user.click(screen.getByRole('button', { name: 'Rename' }));
+
+    await waitFor(() => expect(saveComponent).toHaveBeenCalledWith(expect.objectContaining({
+      id: component.id, name: 'Primary button',
+    })));
+  });
+
+  it('soft-deletes a component from its context menu', async () => {
+    const library: LibraryRecord = {
+      id: 'library-1', name: 'Design library', description: '',
+      createdAt: '2026-08-17T00:00:00.000Z', updatedAt: '2026-08-17T00:00:00.000Z',
+    };
+    const component: ComponentRecord = {
+      id: 'component-1', libraryId: library.id, name: 'Button component', description: '', category: '', tags: [],
+      html: '<button>Save</button>', css: '', javascript: '', sourceType: 'manual', originalFileName: null,
+      previewPolicy: { allowScripts: false, allowForms: false, allowPopups: false, externalNetworkEnabled: false, allowedOrigins: [] },
+      createdAt: library.createdAt, updatedAt: library.updatedAt, deletedAt: null,
+    };
+    const deleteComponent = vi.fn().mockResolvedValue({
+      componentId: component.id, deletedAt: component.updatedAt, expiresAt: '2026-08-17T00:00:08.000Z',
+    });
+    Object.defineProperty(window, 'componentVault', {
+      configurable: true,
+      value: {
+        getAppSettings: async () => ({ ...defaultAppSettings(), lastLibraryId: library.id }),
+        listLibraries: async () => [library], listComponents: async () => [component],
+        saveAppSettings, deleteComponent,
+        configurePreviewNetwork: vi.fn().mockResolvedValue(undefined),
+        releasePreviewNetwork: vi.fn().mockResolvedValue(undefined),
+      },
+    });
+    const user = userEvent.setup();
+    render(<App />);
+
+    fireEvent.contextMenu(await screen.findByRole('button', { name: 'Button component' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Delete component' }));
+
+    await waitFor(() => expect(deleteComponent).toHaveBeenCalledWith(component.id));
+    expect(screen.getByText('Component deleted')).toBeVisible();
+  });
+
+  it('requires confirmation before deleting a library from its context menu', async () => {
+    const library: LibraryRecord = {
+      id: 'library-1', name: 'Design library', description: '',
+      createdAt: '2026-08-17T00:00:00.000Z', updatedAt: '2026-08-17T00:00:00.000Z',
+    };
+    const deleteLibrary = vi.fn().mockResolvedValue(true);
+    Object.defineProperty(window, 'componentVault', {
+      configurable: true,
+      value: {
+        getAppSettings: async () => ({ ...defaultAppSettings(), lastLibraryId: library.id }),
+        listLibraries: async () => [library], listComponents: async () => [],
+        saveAppSettings, deleteLibrary,
+      },
+    });
+    const user = userEvent.setup();
+    render(<App />);
+
+    fireEvent.contextMenu(await screen.findByRole('button', { name: 'Design library' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Delete library' }));
+    expect(deleteLibrary).not.toHaveBeenCalled();
+    await user.click(screen.getAllByRole('button', { name: 'Delete library' }).at(-1)!);
+
+    await waitFor(() => expect(deleteLibrary).toHaveBeenCalledWith(library.id));
+  });
+
   it('preserves local view and component selections when settings hydrate late', async () => {
     let resolveSettings: (settings: AppSettings) => void;
     const settings = new Promise<AppSettings>((resolve) => { resolveSettings = resolve; });

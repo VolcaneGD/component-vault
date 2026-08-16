@@ -37,6 +37,14 @@ export const createApplicationWindow = ({
     height: 960,
     minWidth: 960,
     minHeight: 640,
+    autoHideMenuBar: true,
+    backgroundColor: '#090d1a',
+    titleBarStyle: 'hidden',
+    titleBarOverlay: {
+      color: '#090d1a',
+      symbolColor: '#edf1ff',
+      height: 32,
+    },
     webPreferences: {
       preload: join(runtimeDirectory, '../preload/index.cjs'),
       contextIsolation: true,
