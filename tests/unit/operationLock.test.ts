@@ -1,4 +1,4 @@
-import { mkdtemp, rm, utimes, writeFile } from 'node:fs/promises';
+import { access, mkdtemp, rm, unlink, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -31,5 +31,18 @@ describe('OperationLock', () => {
     await utimes(lockPath, stale, stale);
 
     await expect(OperationLock.acquire(userDataPath)).resolves.toBeInstanceOf(OperationLock);
+  });
+
+  it('never unlinks a replacement lock it no longer owns', async () => {
+    const userDataPath = await mkdtemp(join(tmpdir(), 'component-vault-lock-'));
+    directories.push(userDataPath);
+    const lock = await OperationLock.acquire(userDataPath);
+    const lockPath = join(userDataPath, 'component-vault.operation.lock');
+    await unlink(lockPath);
+    await writeFile(lockPath, 'replacement-owner\n', 'utf8');
+
+    await lock.release();
+
+    await expect(access(lockPath)).resolves.toBeUndefined();
   });
 });

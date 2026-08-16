@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { open, readFile, stat, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -15,15 +16,16 @@ export class DatabaseBusyError extends Error {
 export class OperationLock {
   private released = false;
 
-  private constructor(private readonly lockPath: string) {}
+  private constructor(private readonly lockPath: string, private readonly owner: string) {}
 
   static async acquire(userDataPath: string): Promise<OperationLock> {
     const lockPath = join(userDataPath, LOCK_FILE_NAME);
     try {
       const file = await open(lockPath, 'wx', 0o600);
-      await file.writeFile(`${process.pid}\n`, 'utf8');
+      const owner = `${process.pid}:${randomUUID()}`;
+      await file.writeFile(`${owner}\n`, 'utf8');
       await file.close();
-      return new OperationLock(lockPath);
+      return new OperationLock(lockPath, owner);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
         if (await reclaimDeadOwner(lockPath)) return OperationLock.acquire(userDataPath);
@@ -36,6 +38,8 @@ export class OperationLock {
   async release(): Promise<void> {
     if (this.released) return;
     this.released = true;
+    const owner = await readFile(this.lockPath, 'utf8').catch(() => '');
+    if (owner.trim() !== this.owner) return;
     await unlink(this.lockPath).catch(error => {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
     });
@@ -48,7 +52,7 @@ const reclaimDeadOwner = async (lockPath: string): Promise<boolean> => {
     stat(lockPath).catch(() => null),
   ]);
   if (!metadata || Date.now() - metadata.mtimeMs < LOCK_STARTUP_GRACE_MS) return false;
-  const pid = Number.parseInt(contents.trim(), 10);
+  const pid = Number.parseInt(contents.trim().split(':', 1)[0], 10);
   if (!Number.isSafeInteger(pid) || pid <= 0 || processIsAlive(pid)) return false;
   await unlink(lockPath).catch(() => undefined);
   return true;
