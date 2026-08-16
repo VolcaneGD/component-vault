@@ -90,6 +90,6 @@ Import accepts one or more `.html` or `.htm` files and presents every candidate 
 
 Export writes a standalone UTF-8 HTML library that works offline, contains the selected components, and can be re-imported by Component Vault. Preview permissions are retained, but the standalone viewer continues to sandbox component execution. Keep an exported HTML library as an exchange or backup artifact; use the application-data backup procedure for a complete operational backup.
 
-## Attribution
+## License and attribution
 
-Component Vault is inspired by PropertyHTML. License and attribution details are in [resources/THIRD_PARTY_NOTICES.md](resources/THIRD_PARTY_NOTICES.md).
+Component Vault is distributed under the [ISC License](LICENSE). It is inspired by PropertyHTML; third-party license and attribution details are in [resources/THIRD_PARTY_NOTICES.md](resources/THIRD_PARTY_NOTICES.md).

@@ -18,6 +18,8 @@ files:
   - '!.serena{,/**/*}'
   - '!.superpowers{,/**/*}'
 extraResources:
+  - from: LICENSE
+    to: LICENSE
   - from: resources/THIRD_PARTY_NOTICES.md
     to: THIRD_PARTY_NOTICES.md
 asarUnpack:

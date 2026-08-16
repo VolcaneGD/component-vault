@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { inflateSync } from 'node:zlib';
 
@@ -101,6 +101,10 @@ const parseIcoEntries = (ico: Buffer): IcoEntry[] => {
 };
 
 describe('Windows application icon', () => {
+  it('contains the archive icon source for website and Windows packaging', () => {
+    expect(existsSync(resolve('build/component-vault-archive-icon.png'))).toBe(true);
+  });
+
   it('contains the required Windows icon sizes', () => {
     const ico = readFileSync(resolve('build/icon.ico'));
 

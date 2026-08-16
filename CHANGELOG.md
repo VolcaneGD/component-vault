@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.1 - 2026-08-16
+
+- Replace the Windows and website icon with a saved HTML component archive design.
+- Include the declared ISC license with Windows distributions.
+
 ## 1.0.0 - 2026-08-16
 
 Initial public release of Component Vault for Windows.
