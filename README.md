@@ -84,6 +84,23 @@ Component Vault is local-first and does not require network access. Component pr
 - `Escape` closes the Command Palette and modal dialogs.
 - `Tab` and `Shift+Tab` move through controls and remain trapped inside open modal dialogs.
 
+## Agent CLI
+
+Codex and other local agents can manage the same library through the safe local
+CLI, even while the desktop application is open. Start with the live guide:
+
+```powershell
+ComponentVault.exe --cli agent-guide --format json
+ComponentVault.exe --cli schema component update
+```
+
+The installed `component-vault` launcher provides the same interface. Send
+commands with `--input-json`; stdout contains exactly one JSON response. Read
+the target record immediately before an update, delete, or reorder and pass
+its returned `revision` as `ifRevision`. On `conflict`, do not overwrite the
+newer GUI or agent edit—read it again and ask for a decision. See
+[docs/agent-cli.md](docs/agent-cli.md) for the safety contract.
+
 ## Import and export
 
 Import accepts one or more `.html` or `.htm` files and presents every candidate for review before it is added. UTF-8 and supported legacy encodings such as Shift_JIS are detected; ambiguous or oversized files require explicit review or confirmation. A Component Vault export can be merged into an existing library or restored as a new library.

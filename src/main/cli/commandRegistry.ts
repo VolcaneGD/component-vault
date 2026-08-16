@@ -111,9 +111,35 @@ export const commandRegistry = (dependencies: CommandRegistryDependencies): CliC
         libraries.reorderComponentsIfRevision(requiredId(input, 'libraryId'), componentIds, requiredRevision(input));
         return { reordered: true };
       }),
-    definition('import', 'Parse HTML or Component Vault export files into import candidates.', false, 'none',
-      objectSchema({ paths: { type: 'array', items: { type: 'string' } }, options: { type: 'object' } }, ['paths']), input =>
-        imports(requiredArray(input, 'paths').map((value, index) => requiredStringValue(value, `paths[${index}]`, 32_767)), asImportOptions(input.options))),
+    definition('import', 'Import HTML or Component Vault export files into a library.', true, 'none',
+      objectSchema({ libraryId: idSchema, paths: { type: 'array', items: { type: 'string' } }, options: { type: 'object' } }, ['libraryId', 'paths']), input => {
+        const libraryId = requiredId(input, 'libraryId');
+        if (!libraries.listLibraries().some(library => library.id === libraryId)) {
+          throw new CliNotFoundError('Library was not found.');
+        }
+        const candidates = imports(
+          requiredArray(input, 'paths').map((value, index) => requiredStringValue(value, `paths[${index}]`, 32_767)),
+          asImportOptions(input.options),
+        );
+        const saved = candidates.flatMap(candidate => {
+          if (!candidate.ok) return [];
+          if ('draft' in candidate) return [libraries.saveComponent({ ...candidate.draft, libraryId })];
+          return candidate.bundle.components.map(component => libraries.saveComponent({
+            libraryId,
+            name: component.name,
+            description: component.description,
+            category: component.category,
+            html: component.html,
+            css: component.css,
+            javascript: component.javascript,
+            sourceType: 'import',
+            originalFileName: candidate.fileName,
+            tags: component.tags,
+            previewPolicy: component.previewPolicy,
+          }));
+        });
+        return { imported: saved, rejected: candidates.filter(candidate => !candidate.ok) };
+      }),
     definition('export', 'Write a standalone Component Vault HTML export to a supplied path.', false, 'none',
       objectSchema({ payload: { type: 'object' }, path: { type: 'string' } }, ['payload', 'path']), async input => {
         const path = requiredString(input, 'path', 32_767);
@@ -127,6 +153,24 @@ export const commandRegistry = (dependencies: CommandRegistryDependencies): CliC
       objectSchema({ patch: { type: 'object' } }, ['patch']), input => settings.saveAppSettings(asSettingsPatch(input.patch))),
   ];
   return commands;
+};
+
+export const commandCatalog = (): CliCommandDefinition[] => commandRegistry({} as CommandRegistryDependencies);
+
+export const agentGuide = (): { protocolVersion: number; commands: Array<Omit<CliCommandDefinition, 'execute'>> } => ({
+  protocolVersion: 1,
+  commands: commandCatalog().map(({ execute: _execute, ...command }) => command),
+});
+
+export const agentGuideMarkdown = (): string => {
+  const guide = agentGuide();
+  return [
+    '# Component Vault Agent CLI',
+    '',
+    'Run `component-vault agent-guide --format json` before a mutation. Resolve names with list/search and send the returned revision as `ifRevision` for every command whose revision field is not `none`.',
+    '',
+    ...guide.commands.map(command => `- \`${command.name}\` — ${command.summary} (revision: ${command.revision})`),
+  ].join('\n');
 };
 
 const definition = (

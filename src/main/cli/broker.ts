@@ -1,6 +1,6 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { createServer, type Server, type Socket } from 'node:net';
-import { mkdir, rename, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import {
   CLI_MAX_REQUEST_BYTES,
@@ -40,6 +40,21 @@ export const cliBrokerEndpoint = (userDataPath: string): string => {
 };
 
 export const cliBrokerCapabilityPath = (userDataPath: string): string => join(userDataPath, CAPABILITY_FILE);
+
+export const readCliBrokerEndpoint = async (userDataPath: string): Promise<CliBrokerEndpoint | null> => {
+  try {
+    const parsed = JSON.parse(await readFile(cliBrokerCapabilityPath(userDataPath), 'utf8')) as unknown;
+    if (!isRecord(parsed)
+      || parsed.protocolVersion !== CLI_PROTOCOL_VERSION
+      || typeof parsed.endpoint !== 'string'
+      || !parsed.endpoint.startsWith('\\\\.\\pipe\\component-vault-')
+      || typeof parsed.token !== 'string'
+      || parsed.token.length < 32) return null;
+    return { protocolVersion: parsed.protocolVersion, endpoint: parsed.endpoint, token: parsed.token };
+  } catch {
+    return null;
+  }
+};
 
 export const startCliBroker = async ({
   userDataPath,

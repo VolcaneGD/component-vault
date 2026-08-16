@@ -69,11 +69,17 @@ export const toCliFailure = (error: unknown): CliFailure => {
   if (coded?.code === 'database-busy') {
     return { ok: false, code: 'database-busy', message: 'Component Vault is busy. Retry shortly.' };
   }
-  if (error instanceof CliUsageError) {
-    return { ok: false, code: 'usage', message: boundedMessage(error.message, 'Invalid command input.') };
+  if (error instanceof CliUsageError || coded?.code === 'usage') {
+    return { ok: false, code: 'usage', message: boundedMessage(
+      typeof coded?.message === 'string' ? coded.message : error instanceof Error ? error.message : '',
+      'Invalid command input.',
+    ) };
   }
-  if (error instanceof CliNotFoundError) {
-    return { ok: false, code: 'not-found', message: boundedMessage(error.message, 'Requested record was not found.') };
+  if (error instanceof CliNotFoundError || coded?.code === 'not-found') {
+    return { ok: false, code: 'not-found', message: boundedMessage(
+      typeof coded?.message === 'string' ? coded.message : error instanceof Error ? error.message : '',
+      'Requested record was not found.',
+    ) };
   }
   return { ok: false, code: 'internal-error', message: 'Unable to complete the command.' };
 };

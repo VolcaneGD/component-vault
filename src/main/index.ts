@@ -10,6 +10,7 @@ import { startCliBroker, type CliBroker } from './cli/broker';
 import { OperationLock } from './cli/operationLock';
 import { executeCommand } from '../shared/cliProtocol';
 import type { LibraryChangedEvent } from '../shared/contracts';
+import { runCli } from './cli/entrypoint';
 import { createPreviewSecurityController } from './security/previewSecurity';
 import { installPreviewProtocol, registerPreviewScheme } from './security/previewProtocol';
 import {
@@ -33,6 +34,7 @@ let cliBroker: CliBroker | null = null;
 let shutdownInProgress = false;
 const previewSecurity = createPreviewSecurityController();
 registerPreviewScheme(protocol);
+const cliMode = process.argv.includes('--cli');
 
 const createWindow = (): void => {
   windowStateController = new WindowStateController({
@@ -50,7 +52,16 @@ const createWindow = (): void => {
   windowStateController.track(mainWindow as unknown as ManagedWindow);
 };
 
-app.whenReady().then(async () => {
+if (cliMode) {
+  void app.whenReady().then(async () => {
+    const result = await runCli(process.argv.slice(process.argv.indexOf('--cli') + 1), {
+      userDataPath: app.getPath('userData'),
+    });
+    process.stdout.write(result.stdout);
+    if (result.stderr) process.stderr.write(result.stderr);
+    app.exit(result.exitCode);
+  });
+} else app.whenReady().then(async () => {
   try {
     operationLock = await OperationLock.acquire(app.getPath('userData'));
   } catch {

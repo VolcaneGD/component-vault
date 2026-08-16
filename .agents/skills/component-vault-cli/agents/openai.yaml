@@ -1,0 +1,4 @@
+interface:
+  display_name: "Component Vault CLI"
+  short_description: "Safely manage Component Vault libraries through its local CLI."
+  default_prompt: "Use $component-vault-cli to save a reusable HTML component safely."
