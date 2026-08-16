@@ -17,6 +17,17 @@ export const SettingsDialog = ({ language, onLanguageChange, onClose, returnFocu
     return () => returnFocus?.focus();
   }, [returnFocus]);
 
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [onClose]);
+
   return (
     <div className="about-dialog-backdrop" onMouseDown={(event) => {
       if (event.target === event.currentTarget) onClose();

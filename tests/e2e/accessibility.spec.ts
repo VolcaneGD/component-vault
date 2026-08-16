@@ -107,11 +107,11 @@ test('traps dialog focus, restores the trigger, and honors reduced motion', asyn
     await page.keyboard.press('Escape');
     await expect(commandTrigger).toBeFocused();
 
-    const settingsTrigger = page.getByRole('button', { name: 'Settings' });
+    const settingsTrigger = page.getByRole('button', { name: 'Settings', exact: true });
     await settingsTrigger.click();
-    const about = page.getByRole('dialog', { name: 'About Component Vault' });
-    await expect(about).toBeVisible();
-    await expect(about.getByRole('button', { name: 'Close About' })).toBeFocused();
+    const settings = page.getByRole('dialog', { name: 'Settings' });
+    await expect(settings).toBeVisible();
+    await expect(settings.getByRole('button', { name: 'Close Settings' })).toBeFocused();
     await page.keyboard.press('Escape');
     await expect(settingsTrigger).toBeFocused();
 
