@@ -4,6 +4,7 @@ import {
   isPreviewPolicy,
   isViewMode,
 } from '../../src/shared/contracts';
+import { isAppSettings, normalizeAppSettings } from '../../src/shared/validation';
 
 describe('shared contracts', () => {
   it('defaults to the approved two-column workbench', () => {
@@ -11,7 +12,18 @@ describe('shared contracts', () => {
       viewMode: 'workbench', galleryColumns: 3,
       editorPreviewRatio: 0.55,
       language: 'en',
+      previewTheme: 'light',
     });
+  });
+
+  it('normalizes legacy application settings with a light preview canvas', () => {
+    const { previewTheme: _previewTheme, ...legacySettings } = defaultAppSettings() as Record<string, unknown>;
+
+    expect(normalizeAppSettings(legacySettings)).toMatchObject({ previewTheme: 'light' });
+  });
+
+  it('rejects an unsupported preview canvas theme', () => {
+    expect(isAppSettings({ ...defaultAppSettings(), previewTheme: 'sepia' })).toBe(false);
   });
   it.each(['workbench', 'gallery', 'studio'])('accepts %s', mode => {
     expect(isViewMode(mode)).toBe(true);

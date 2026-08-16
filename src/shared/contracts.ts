@@ -1,4 +1,5 @@
 export type ViewMode = 'workbench' | 'gallery' | 'studio';
+export type PreviewTheme = 'light' | 'dark';
 
 export interface ComponentRecord {
   id: string;
@@ -139,6 +140,7 @@ export interface HtmlImportOptions {
 
 export interface AppSettings {
   language: AppLanguage;
+  previewTheme: PreviewTheme;
   viewMode: ViewMode;
   galleryColumns: 1 | 2 | 3 | 4;
   editorPreviewRatio: number;
@@ -191,6 +193,7 @@ export interface ComponentVaultApi {
 
 export const defaultAppSettings = (): AppSettings => ({
   language: 'en',
+  previewTheme: 'light',
   viewMode: 'workbench',
   galleryColumns: 3,
   editorPreviewRatio: 0.55,
@@ -201,6 +204,9 @@ export const defaultAppSettings = (): AppSettings => ({
 
 export const isViewMode = (value: unknown): value is ViewMode =>
   value === 'workbench' || value === 'gallery' || value === 'studio';
+
+export const isPreviewTheme = (value: unknown): value is PreviewTheme =>
+  value === 'light' || value === 'dark';
 
 export const isHttpsOrigin = (value: unknown): value is string => {
   if (typeof value !== 'string') return false;
