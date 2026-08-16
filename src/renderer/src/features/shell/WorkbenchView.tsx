@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, 
 import type { PreviewPolicy } from '../../../../shared/contracts';
 import { ComponentEditor } from '../editor/ComponentEditor';
 import { PreviewHost } from '../preview/PreviewHost';
-import { useAppStore } from '../../store/useAppStore';
+import { ALL_COMPONENTS_SCOPE, useAppStore } from '../../store/useAppStore';
 import { t } from '../../i18n';
 
 const clampRatio = (ratio: number): number => Math.min(0.8, Math.max(0.25, ratio));
@@ -27,7 +27,8 @@ export const WorkbenchView = () => {
   } = useAppStore();
   const workbenchRef = useRef<HTMLDivElement>(null);
   const [ratio, setRatio] = useState(() => clampRatio(settings.editorPreviewRatio));
-  const activeLibraryId = selectedLibraryId ?? libraries[0]?.id ?? null;
+  const activeLibraryId = selectedLibraryId;
+  const activeScopeId = activeLibraryId ?? ALL_COMPONENTS_SCOPE;
   const component = useMemo(
     () => components.find((item) => item.id === selectedComponentId) ?? components[0] ?? null,
     [components, selectedComponentId],
@@ -38,9 +39,9 @@ export const WorkbenchView = () => {
   }, [settings.editorPreviewRatio]);
 
   useEffect(() => {
-    if (!activeLibraryId || componentsLibraryId === activeLibraryId) return;
+    if (libraries.length === 0 || componentsLibraryId === activeScopeId) return;
     void loadComponents(activeLibraryId).catch(() => undefined);
-  }, [activeLibraryId, componentsLibraryId, loadComponents]);
+  }, [activeLibraryId, activeScopeId, componentsLibraryId, libraries.length, loadComponents]);
 
   useEffect(() => {
     if (component && component.id !== selectedComponentId) setSelectedComponentId(component.id);

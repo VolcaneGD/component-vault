@@ -10,6 +10,8 @@ import {
   type ViewMode,
 } from '../../../shared/contracts';
 
+export const ALL_COMPONENTS_SCOPE = '__all_components__';
+
 export interface PendingDeletion {
   token: SoftDeleteToken;
   component: ComponentRecord;
@@ -41,7 +43,7 @@ interface AppStore {
   clearFilters: () => void;
   toggleComponentSelection: (componentId: string) => void;
   clearComponentSelection: () => void;
-  loadComponents: (libraryId: string) => Promise<void>;
+  loadComponents: (libraryId: string | null) => Promise<void>;
   reorderComponents: (libraryId: string, componentIds: string[]) => Promise<void>;
   updateComponentDraft: (component: ComponentRecord) => void;
   handleExternalLibraryChanged: (event: LibraryChangedEvent) => Promise<void>;
@@ -287,7 +289,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
   })),
   clearComponentSelection: () => set({ selectedComponentIds: [] }),
   loadComponents: async (libraryId) => {
-    const components = await window.componentVault.listComponents(libraryId);
+    const components = libraryId
+      ? await window.componentVault.listComponents(libraryId)
+      : (await Promise.all(get().libraries.map((library) => window.componentVault.listComponents(library.id))))
+        .flat();
     set((state) => {
       const selectedIsAvailable = components.some((component) => component.id === state.selectedComponentId);
       const selectedComponentId = selectedIsAvailable
@@ -298,7 +303,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       }
       return {
         components,
-        componentsLibraryId: libraryId,
+        componentsLibraryId: libraryId ?? ALL_COMPONENTS_SCOPE,
         draftOrigins: {},
         dirtyComponentIds: [],
         externalChangePending: false,

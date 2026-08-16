@@ -12,7 +12,7 @@ import {
 import type { PreviewPolicy } from '../../../../shared/contracts';
 import { ComponentEditor } from '../editor/ComponentEditor';
 import { PreviewHost } from '../preview/PreviewHost';
-import { useAppStore } from '../../store/useAppStore';
+import { ALL_COMPONENTS_SCOPE, useAppStore } from '../../store/useAppStore';
 import { t } from '../../i18n';
 
 type StudioRatios = [number, number, number];
@@ -121,7 +121,8 @@ export const AdaptiveStudio = ({ ratios }: AdaptiveStudioProps) => {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [paneRatios, setPaneRatios] = useState<StudioRatios>(() =>
     normalizeStudioRatios(ratios ?? settings.studioPaneRatios));
-  const activeLibraryId = selectedLibraryId ?? libraries[0]?.id ?? null;
+  const activeLibraryId = selectedLibraryId;
+  const activeScopeId = activeLibraryId ?? ALL_COMPONENTS_SCOPE;
   const component = useMemo(
     () => components.find((item) => item.id === selectedComponentId) ?? components[0] ?? null,
     [components, selectedComponentId],
@@ -132,9 +133,9 @@ export const AdaptiveStudio = ({ ratios }: AdaptiveStudioProps) => {
   }, [ratios, settings.studioPaneRatios]);
 
   useEffect(() => {
-    if (!activeLibraryId || componentsLibraryId === activeLibraryId) return;
+    if (libraries.length === 0 || componentsLibraryId === activeScopeId) return;
     void loadComponents(activeLibraryId).catch(() => undefined);
-  }, [activeLibraryId, componentsLibraryId, loadComponents]);
+  }, [activeLibraryId, activeScopeId, componentsLibraryId, libraries.length, loadComponents]);
 
   useEffect(() => {
     if (component && component.id !== selectedComponentId) setSelectedComponentId(component.id);

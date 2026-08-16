@@ -10,7 +10,7 @@ import {
 } from 'react';
 import type { ComponentRecord, PreviewPolicy } from '../../../../shared/contracts';
 import { PreviewHost } from '../preview/PreviewHost';
-import { useAppStore } from '../../store/useAppStore';
+import { ALL_COMPONENTS_SCOPE, useAppStore } from '../../store/useAppStore';
 import { t } from '../../i18n';
 
 type GalleryColumns = 1 | 2 | 3 | 4;
@@ -215,7 +215,8 @@ export const GalleryView = ({ columns }: GalleryViewProps) => {
   const [reorderError, setReorderError] = useState<{ libraryId: string; message: string } | null>(null);
   const draggedId = useRef<string | null>(null);
   const reorderRequestGeneration = useRef(0);
-  const activeLibraryId = selectedLibraryId ?? libraries[0]?.id ?? null;
+  const activeLibraryId = selectedLibraryId;
+  const activeScopeId = activeLibraryId ?? ALL_COMPONENTS_SCOPE;
 
   useEffect(() => {
     if (columns === undefined) setGalleryColumns(settings.galleryColumns);
@@ -225,12 +226,12 @@ export const GalleryView = ({ columns }: GalleryViewProps) => {
     reorderRequestGeneration.current += 1;
     draggedId.current = null;
     setReorderError(null);
-  }, [activeLibraryId]);
+  }, [activeScopeId]);
 
   useEffect(() => {
-    if (!activeLibraryId || componentsLibraryId === activeLibraryId) return;
+    if (libraries.length === 0 || componentsLibraryId === activeScopeId) return;
     void loadComponents(activeLibraryId).catch(() => undefined);
-  }, [activeLibraryId, componentsLibraryId, loadComponents]);
+  }, [activeLibraryId, activeScopeId, componentsLibraryId, libraries.length, loadComponents]);
 
   const filtered = useMemo(
     () => components.filter((component) => matchesFilters(component, searchQuery, selectedTags)),
@@ -331,7 +332,7 @@ export const GalleryView = ({ columns }: GalleryViewProps) => {
             query={searchQuery}
             selected={component.id === selectedComponentId}
             checked={selectedComponentIds.includes(component.id)}
-            draggable={!isFiltered}
+            draggable={Boolean(activeLibraryId) && !isFiltered}
             onOpen={() => setSelectedComponentId(component.id)}
             onToggle={() => toggleComponentSelection(component.id)}
             onDragStart={(event) => {

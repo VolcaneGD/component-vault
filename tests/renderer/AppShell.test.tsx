@@ -379,6 +379,52 @@ describe('App shell navigation', () => {
     expect(screen.getByRole('searchbox', { name: 'Search components' })).toBeVisible();
   });
 
+  it('keeps every component reachable after selecting all components', async () => {
+    const firstLibrary: LibraryRecord = {
+      id: 'library-1', name: 'First library', description: '',
+      createdAt: '2026-08-15T00:00:00.000Z', updatedAt: '2026-08-15T00:00:00.000Z',
+    };
+    const secondLibrary: LibraryRecord = {
+      id: 'library-2', name: 'Second library', description: '',
+      createdAt: '2026-08-15T00:00:00.000Z', updatedAt: '2026-08-15T00:00:00.000Z',
+    };
+    const firstComponent: ComponentRecord = {
+      id: 'component-1', libraryId: firstLibrary.id, name: 'First component', description: '', category: '', tags: [],
+      html: '<button>First</button>', css: '', javascript: '', sourceType: 'manual', originalFileName: null,
+      previewPolicy: { allowScripts: false, allowForms: false, allowPopups: false, externalNetworkEnabled: false, allowedOrigins: [] },
+      createdAt: firstLibrary.createdAt, updatedAt: firstLibrary.updatedAt, deletedAt: null,
+    };
+    const secondComponent: ComponentRecord = {
+      ...firstComponent,
+      id: 'component-2',
+      libraryId: secondLibrary.id,
+      name: 'Second component',
+      html: '<button>Second</button>',
+    };
+    Object.defineProperty(window, 'componentVault', {
+      configurable: true,
+      value: {
+        getAppSettings: async () => ({ ...defaultAppSettings(), lastLibraryId: firstLibrary.id, viewMode: 'gallery' }),
+        listLibraries: async () => [firstLibrary, secondLibrary],
+        listComponents: async (libraryId: string) => libraryId === firstLibrary.id ? [firstComponent] : [secondComponent],
+        saveAppSettings,
+        configurePreviewNetwork: vi.fn().mockResolvedValue(undefined),
+        releasePreviewNetwork: vi.fn().mockResolvedValue(undefined),
+        onPreviewRequestBlocked: vi.fn(() => () => undefined),
+      },
+    });
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByRole('button', { name: 'Open First component' });
+    await user.click(screen.getByRole('button', { name: 'All components' }));
+
+    expect(await screen.findByRole('button', { name: 'Open Second component' })).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Open Second component' }));
+    await user.click(screen.getByRole('button', { name: 'A Workbench' }));
+    expect(await screen.findByDisplayValue('<button>Second</button>')).toBeVisible();
+  });
+
   it('preserves local view and component selections when settings hydrate late', async () => {
     let resolveSettings: (settings: AppSettings) => void;
     const settings = new Promise<AppSettings>((resolve) => { resolveSettings = resolve; });
