@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
+import { useAppStore } from '../../store/useAppStore';
+import { t } from '../../i18n';
 
 interface UndoToastProps {
   label: string;
@@ -8,6 +10,7 @@ interface UndoToastProps {
 }
 
 export const UndoToast = ({ label, expiresAt, onUndo, onExpire }: UndoToastProps) => {
+  const language = useAppStore((state) => state.settings.language);
   const [isBusy, setIsBusy] = useState(false);
   const settledRef = useRef(false);
   const expiryReachedRef = useRef(false);
@@ -46,16 +49,16 @@ export const UndoToast = ({ label, expiresAt, onUndo, onExpire }: UndoToastProps
   return (
     <div className="undo-toast" role="status" aria-live="polite">
       <div>
-        <strong>Component deleted</strong>
+        <strong>{t(language, 'componentDeleted')}</strong>
         <span>{label}</span>
       </div>
       <button
         type="button"
         disabled={isBusy}
-        aria-label={`Undo delete ${label}`}
+        aria-label={language === 'ja' ? `${t(language, 'undoDelete')}: ${label}` : `${t(language, 'undoDelete')} ${label}`}
         onClick={() => void undo()}
       >
-        Undo
+        {t(language, 'undo')}
       </button>
     </div>
   );

@@ -1,5 +1,5 @@
 import { defaultAppSettings, type AppSettings } from '../../shared/contracts';
-import { isAppSettings } from '../../shared/validation';
+import { isAppSettings, normalizeAppSettings } from '../../shared/validation';
 import type { DatabaseContext } from '../database/database';
 
 export interface SettingsService {
@@ -17,7 +17,7 @@ export const createSettingsService = ({ db }: DatabaseContext): SettingsService 
     if (!row) return defaultAppSettings();
     try {
       const saved = JSON.parse(row.value) as unknown;
-      return isAppSettings(saved) ? saved : defaultAppSettings();
+      return normalizeAppSettings(saved) ?? defaultAppSettings();
     } catch {
       return defaultAppSettings();
     }

@@ -10,6 +10,7 @@ describe('shared contracts', () => {
     expect(defaultAppSettings()).toMatchObject({
       viewMode: 'workbench', galleryColumns: 3,
       editorPreviewRatio: 0.55,
+      language: 'en',
     });
   });
   it.each(['workbench', 'gallery', 'studio'])('accepts %s', mode => {

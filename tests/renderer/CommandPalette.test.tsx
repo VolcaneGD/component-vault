@@ -100,11 +100,13 @@ describe('CommandPalette', () => {
     monacoSurface.remove();
   });
 
-  it('opens About from Settings with runtime attribution and the complete PropertyHTML license', async () => {
+  it('opens About from the command palette with runtime attribution and the complete PropertyHTML license', async () => {
     const user = userEvent.setup();
     render(<App />);
 
-    await user.click(screen.getByRole('button', { name: 'Settings' }));
+    await user.keyboard('{Control>}k{/Control}');
+    await user.type(screen.getByRole('combobox', { name: 'Search commands' }), 'about');
+    await user.keyboard('{Enter}');
     const dialog = screen.getByRole('dialog', { name: 'About Component Vault' });
     expect(dialog).toHaveTextContent('Copyright (c) 2026 uni928');
     await waitFor(() => expect(dialog).toHaveTextContent('Electron 43.4.0'));

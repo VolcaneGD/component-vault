@@ -6,6 +6,8 @@ import {
   mountComponentModels,
 } from './MonacoEditorAdapter';
 import { componentModelPath } from './monacoModelLifecycle';
+import { useAppStore } from '../../store/useAppStore';
+import { t } from '../../i18n';
 
 export type EditorLanguage = 'html' | 'css' | 'javascript';
 
@@ -56,6 +58,7 @@ export const EditorTabs = ({
   onSave,
   autoFocusHtml = false,
 }: EditorTabsProps) => {
+  const language = useAppStore((state) => state.settings.language);
   const [activeLanguage, setActiveLanguage] = useState<EditorLanguage>('html');
   const editorRef = useRef<Parameters<OnMount>[0] | null>(null);
   const values = { html, css, javascript };
@@ -102,7 +105,7 @@ export const EditorTabs = ({
   return (
     <div className="editor-tabs">
       <div className="editor-tabs__bar">
-        <div className="editor-tabs__list" role="tablist" aria-label="Code language">
+        <div className="editor-tabs__list" role="tablist" aria-label={t(language, 'codeLanguage')}>
           {tabs.map((tab) => (
             <button
               key={tab.language}
@@ -124,7 +127,7 @@ export const EditorTabs = ({
           ))}
         </div>
         <button type="button" className="editor-tabs__format" onClick={() => void formatDocument()}>
-          Format
+          {t(language, 'format')}
         </button>
       </div>
       <div
@@ -132,7 +135,7 @@ export const EditorTabs = ({
         className="editor-tabs__panel"
         role="tabpanel"
         aria-labelledby={`code-tab-${activeLanguage}`}
-        aria-label={`${activeTab.label} source`}
+        aria-label={`${activeTab.label} ${t(language, 'source')}`}
       >
         <MonacoEditor
           key={`${componentId}-${activeLanguage}`}

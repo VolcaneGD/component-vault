@@ -3,6 +3,7 @@ import type { PreviewPolicy } from '../../../../shared/contracts';
 import { ComponentEditor } from '../editor/ComponentEditor';
 import { PreviewHost } from '../preview/PreviewHost';
 import { useAppStore } from '../../store/useAppStore';
+import { t } from '../../i18n';
 
 const clampRatio = (ratio: number): number => Math.min(0.8, Math.max(0.25, ratio));
 
@@ -90,7 +91,7 @@ export const WorkbenchView = () => {
   }, [persistRatio, ratio]);
 
   const persistPreviewPolicy = useCallback(async (policy: PreviewPolicy) => {
-    if (!component) throw new Error('No component is selected');
+    if (!component) throw new Error(t(settings.language, 'noComponentSelected'));
     const componentWithPolicy = { ...component, previewPolicy: policy };
     updateComponentDraft(componentWithPolicy);
     const saved = await saveComponent(componentWithPolicy);
@@ -99,10 +100,10 @@ export const WorkbenchView = () => {
 
   if (!component) {
     return (
-      <section className="workbench-empty workspace-panel" aria-label="Empty workbench">
-        <span className="eyebrow">Workbench</span>
-        <h2>Create or import a component</h2>
-        <p>Your HTML, CSS, JavaScript, and isolated live preview will appear here.</p>
+      <section className="workbench-empty workspace-panel" aria-label={t(settings.language, 'emptyWorkbench')}>
+        <span className="eyebrow">{t(settings.language, 'workbench')}</span>
+        <h2>{t(settings.language, 'createOrImport')}</h2>
+        <p>{t(settings.language, 'workbenchEmptyDescription')}</p>
       </section>
     );
   }
@@ -111,7 +112,7 @@ export const WorkbenchView = () => {
     <div
       ref={workbenchRef}
       className="workbench"
-      aria-label="Component workbench"
+      aria-label={t(settings.language, 'componentWorkbench')}
       style={{ gridTemplateRows: `minmax(10rem, ${ratio}fr) 0.55rem minmax(10rem, ${1 - ratio}fr)` }}
     >
       <ComponentEditor
@@ -128,7 +129,7 @@ export const WorkbenchView = () => {
       <div
         className="workbench__splitter"
         role="separator"
-        aria-label="Resize editor and preview"
+        aria-label={t(settings.language, 'resizeEditorPreview')}
         aria-orientation="horizontal"
         aria-valuemin={25}
         aria-valuemax={80}
@@ -141,8 +142,8 @@ export const WorkbenchView = () => {
       </div>
       <div className="workbench__preview-panel">
         <div className="workbench__preview-heading">
-          <span>Live Preview</span>
-          <span className="status-dot">Isolated</span>
+          <span>{t(settings.language, 'livePreview')}</span>
+          <span className="status-dot">{t(settings.language, 'isolated')}</span>
         </div>
         <PreviewHost component={component} onPreviewPolicyChange={persistPreviewPolicy} />
       </div>

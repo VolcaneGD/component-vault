@@ -215,7 +215,7 @@ describe('SettingsService', () => {
     const service = createSettingsService(openTestDatabase());
 
     expect(service.getAppSettings()).toEqual({
-      viewMode: 'workbench', galleryColumns: 3, editorPreviewRatio: 0.55,
+      language: 'en', viewMode: 'workbench', galleryColumns: 3, editorPreviewRatio: 0.55,
       studioPaneRatios: [0.24, 0.42, 0.34], lastLibraryId: null, lastComponentId: null,
     });
   });
@@ -227,7 +227,7 @@ describe('SettingsService', () => {
     const saved = service.saveAppSettings({ viewMode: 'gallery', galleryColumns: 4 });
 
     expect(saved).toEqual({
-      viewMode: 'gallery', galleryColumns: 4, editorPreviewRatio: 0.7,
+      language: 'en', viewMode: 'gallery', galleryColumns: 4, editorPreviewRatio: 0.7,
       studioPaneRatios: [0.24, 0.42, 0.34], lastLibraryId: null, lastComponentId: null,
     });
     expect(service.getAppSettings()).toEqual(saved);

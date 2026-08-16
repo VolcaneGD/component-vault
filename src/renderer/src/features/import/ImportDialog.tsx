@@ -14,6 +14,8 @@ import type {
   ImportResult,
   LibraryRecord,
 } from '../../../../shared/contracts';
+import { useAppStore } from '../../store/useAppStore';
+import { t } from '../../i18n';
 
 type ImportMode = 'files' | 'code';
 type CandidateStatus = 'ready' | 'failed' | 'save-failed' | 'saving' | 'saved';
@@ -101,6 +103,7 @@ export const ImportDialog = ({
   onLibraryCreated,
   onStartCode,
 }: ImportDialogProps) => {
+  const language = useAppStore((state) => state.settings.language);
   const [availableLibraries, setAvailableLibraries] = useState(libraries);
   const [libraryId, setLibraryId] = useState(
     selectedLibraryId && libraries.some((library) => library.id === selectedLibraryId)
@@ -273,7 +276,7 @@ export const ImportDialog = ({
     void importFiles(Array.from(event.dataTransfer.files));
   };
 
-  const title = mode === 'files' ? 'Import HTML components' : 'Create a component';
+  const title = mode === 'files' ? t(language, 'importHtmlComponents') : t(language, 'createComponent');
 
   return (
     <div className="import-dialog-backdrop" onMouseDown={() => onClose?.()}>
@@ -288,7 +291,7 @@ export const ImportDialog = ({
       >
         <header className="import-dialog__header">
           <div>
-            <span className="eyebrow">Component intake</span>
+            <span className="eyebrow">{t(language, 'componentIntake')}</span>
             <h2 id="import-dialog-title">{title}</h2>
           </div>
           <button ref={initialFocusRef} type="button" className="button button--icon" aria-label="Close dialog" onClick={onClose}>×</button>
@@ -296,21 +299,21 @@ export const ImportDialog = ({
 
         <div className="import-dialog__body">
           <section className="import-dialog__library" aria-labelledby="target-library-heading">
-            <h3 id="target-library-heading">Target library</h3>
+            <h3 id="target-library-heading">{t(language, 'targetLibrary')}</h3>
             {availableLibraries.length > 0 && (
               <label>
-                <span>Library</span>
-                <select aria-label="Target library" value={libraryId} onChange={(event) => setLibraryId(event.target.value)}>
+                <span>{t(language, 'library')}</span>
+                <select aria-label={t(language, 'targetLibrary')} value={libraryId} onChange={(event) => setLibraryId(event.target.value)}>
                   {availableLibraries.map((library) => <option key={library.id} value={library.id}>{library.name}</option>)}
                 </select>
               </label>
             )}
             <div className="import-dialog__new-library">
               <label>
-                <span>{availableLibraries.length > 0 ? 'Or create a library' : 'Create your first library'}</span>
-                <input aria-label="New library name" value={newLibraryName} onChange={(event) => setNewLibraryName(event.target.value)} />
+                <span>{availableLibraries.length > 0 ? t(language, 'orCreateLibrary') : t(language, 'createFirstLibrary')}</span>
+                <input aria-label={t(language, 'newLibraryName')} value={newLibraryName} onChange={(event) => setNewLibraryName(event.target.value)} />
               </label>
-              <button type="button" className="button" onClick={() => void createLibrary()}>Create library</button>
+              <button type="button" className="button" onClick={() => void createLibrary()}>{t(language, 'createLibrary')}</button>
             </div>
             {libraryError && <p className="field-error" role="alert">{libraryError}</p>}
           </section>
@@ -346,11 +349,11 @@ export const ImportDialog = ({
               <div
                 className="import-dropzone"
                 role="group"
-                aria-label="Drop HTML files"
+                aria-label={language === 'ja' ? t(language, 'dropHtmlFiles') : 'Drop HTML files'}
                 onDragOver={(event) => event.preventDefault()}
                 onDrop={dropFiles}
               >
-                <strong>Drop HTML files here</strong>
+                <strong>{t(language, 'dropHtmlFiles')}</strong>
                 <span>or choose one or more .html / .htm files</span>
                 <button type="button" className="button button--primary" disabled={isImporting} onClick={() => fileInputRef.current?.click()}>
                   {isImporting ? 'Reading files…' : 'Choose HTML files'}
@@ -369,8 +372,8 @@ export const ImportDialog = ({
               {candidates.length > 0 && (
                 <section className="import-candidates" aria-labelledby="candidate-heading">
                   <div className="import-candidates__heading">
-                    <h3 id="candidate-heading">Review candidates</h3>
-                    <span>{candidates.length} files</span>
+                    <h3 id="candidate-heading">{t(language, 'reviewCandidates')}</h3>
+                    <span>{candidates.length} {t(language, 'files')}</span>
                   </div>
                   <ul>
                     {candidates.map((candidate) => (
@@ -381,7 +384,7 @@ export const ImportDialog = ({
                         </div>
                         {candidate.draft && candidate.status !== 'saved' && (
                           <label>
-                            <span>Name</span>
+                            <span>{t(language, 'componentName')}</span>
                             <input
                               aria-label={`Name for ${candidate.fileName}`}
                               value={candidate.draft.name}
@@ -418,15 +421,15 @@ export const ImportDialog = ({
             <section className="code-first-intro">
               <div className="code-first-intro__icon" aria-hidden="true">&lt;/&gt;</div>
               <div>
-                <h3>Start with an empty code canvas</h3>
-                <p>The HTML editor opens first. Your preview stays live, and nothing is saved until you add a name and some HTML, CSS, or JavaScript.</p>
+                <h3>{t(language, 'startEmptyCanvas')}</h3>
+                <p>{t(language, 'codeFirstDescription')}</p>
               </div>
             </section>
           )}
         </div>
 
         <footer className="import-dialog__footer">
-          <button type="button" className="button" onClick={onClose}>Cancel</button>
+          <button type="button" className="button" onClick={onClose}>{t(language, 'cancel')}</button>
           {mode === 'files' ? (
             <button
               type="button"
@@ -443,7 +446,7 @@ export const ImportDialog = ({
               disabled={!libraryId}
               onClick={() => { if (libraryId) onStartCode?.(libraryId); }}
             >
-              Start coding
+              {t(language, 'startCoding')}
             </button>
           )}
         </footer>

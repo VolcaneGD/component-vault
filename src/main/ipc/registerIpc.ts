@@ -273,6 +273,7 @@ const validateImportOptions = (value: unknown): HtmlImportOptions => {
 };
 
 const defaultSettingsForValidation: AppSettings = {
+  language: 'en',
   viewMode: 'workbench', galleryColumns: 3, editorPreviewRatio: 0.55,
   studioPaneRatios: [0.24, 0.42, 0.34], lastLibraryId: null, lastComponentId: null,
 };

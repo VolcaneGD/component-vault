@@ -13,6 +13,7 @@ import type { PreviewPolicy } from '../../../../shared/contracts';
 import { ComponentEditor } from '../editor/ComponentEditor';
 import { PreviewHost } from '../preview/PreviewHost';
 import { useAppStore } from '../../store/useAppStore';
+import { t } from '../../i18n';
 
 type StudioRatios = [number, number, number];
 
@@ -62,7 +63,7 @@ const ComponentList = ({
   onSelect: (componentId: string) => void;
   selectedOptionRef?: Ref<HTMLButtonElement>;
 }) => {
-  const { components, searchQuery, selectedTags } = useAppStore();
+  const { components, searchQuery, selectedTags, settings } = useAppStore();
   const visible = components.filter((component) => {
     const query = searchQuery.trim().toLocaleLowerCase();
     const text = [component.name, component.description, component.category, ...component.tags]
@@ -72,7 +73,7 @@ const ComponentList = ({
   });
 
   return (
-    <div className="studio-component-list" role="listbox" aria-label="Studio components">
+    <div className="studio-component-list" role="listbox" aria-label={t(settings.language, 'studioComponents')}>
       {visible.map((component) => (
         <button
           key={component.id}
@@ -84,10 +85,10 @@ const ComponentList = ({
           onClick={() => onSelect(component.id)}
         >
           <strong>{component.name}</strong>
-          <span>{component.category || 'Uncategorized'}</span>
+          <span>{component.category || t(settings.language, 'uncategorized')}</span>
         </button>
       ))}
-      {visible.length === 0 && <span className="studio-component-list__empty">No matching components</span>}
+      {visible.length === 0 && <span className="studio-component-list__empty">{t(settings.language, 'noComponentsMatch')}</span>}
     </div>
   );
 };
@@ -214,7 +215,7 @@ export const AdaptiveStudio = ({ ratios }: AdaptiveStudioProps) => {
   }, [adjustDivider]);
 
   const persistPreviewPolicy = useCallback(async (policy: PreviewPolicy) => {
-    if (!component) throw new Error('No component is selected');
+    if (!component) throw new Error(t(settings.language, 'noComponentSelected'));
     const next = { ...component, previewPolicy: policy };
     updateComponentDraft(next);
     const saved = await saveComponent(next);
@@ -255,10 +256,10 @@ export const AdaptiveStudio = ({ ratios }: AdaptiveStudioProps) => {
 
   if (!component) {
     return (
-      <section className="studio-empty workspace-panel" aria-label="Empty adaptive studio">
-        <span className="eyebrow">Adaptive Studio</span>
-        <h2>Create or import a component</h2>
-        <p>The component list, editor, and live preview will appear together here.</p>
+      <section className="studio-empty workspace-panel" aria-label={t(settings.language, 'emptyAdaptiveStudio')}>
+        <span className="eyebrow">{t(settings.language, 'adaptiveStudio')}</span>
+        <h2>{t(settings.language, 'createOrImport')}</h2>
+        <p>{t(settings.language, 'studioEmptyDescription')}</p>
       </section>
     );
   }
@@ -270,15 +271,15 @@ export const AdaptiveStudio = ({ ratios }: AdaptiveStudioProps) => {
   } as CSSProperties;
 
   return (
-    <section className="adaptive-studio" aria-label="Adaptive Studio workspace">
+    <section className="adaptive-studio" aria-label={t(settings.language, 'adaptiveStudioWorkspace')}>
       <header className="studio-toolbar">
         <div>
-          <span className="eyebrow">Adaptive Studio</span>
+          <span className="eyebrow">{t(settings.language, 'adaptiveStudio')}</span>
           <h2>{component.name}</h2>
         </div>
         {narrow && (
           <button ref={drawerTriggerRef} type="button" className="button" onClick={() => setDrawerOpen(true)}>
-            Open component list
+            {t(settings.language, 'openComponentList')}
           </button>
         )}
       </header>
@@ -289,7 +290,7 @@ export const AdaptiveStudio = ({ ratios }: AdaptiveStudioProps) => {
         style={style}
       >
         {!narrow && (
-          <section className="studio-pane studio-pane--list" aria-label="Component list pane">
+          <section className="studio-pane studio-pane--list" aria-label={t(settings.language, 'componentListPane')}>
             <ComponentList selectedComponentId={selectedComponentId} onSelect={selectComponent} />
           </section>
         )}
@@ -297,7 +298,7 @@ export const AdaptiveStudio = ({ ratios }: AdaptiveStudioProps) => {
           <div
             className="studio-splitter"
             role="separator"
-            aria-label="Resize component list and editor"
+            aria-label={t(settings.language, 'resizeListEditor')}
             aria-orientation="vertical"
             aria-valuemin={16}
             aria-valuemax={44}
@@ -307,7 +308,7 @@ export const AdaptiveStudio = ({ ratios }: AdaptiveStudioProps) => {
             onKeyDown={(event) => resizeWithKeyboard(0, event)}
           ><span aria-hidden="true" /></div>
         )}
-        <section className="studio-pane studio-pane--editor" aria-label="Editor pane">
+        <section className="studio-pane studio-pane--editor" aria-label={t(settings.language, 'editorPane')}>
           <ComponentEditor
             component={component}
             draftOriginId={draftOrigins[component.id]}
@@ -322,7 +323,7 @@ export const AdaptiveStudio = ({ ratios }: AdaptiveStudioProps) => {
         <div
           className="studio-splitter"
           role="separator"
-          aria-label="Resize editor and preview"
+          aria-label={t(settings.language, 'resizeEditorPreview')}
           aria-orientation="vertical"
           aria-valuemin={34}
           aria-valuemax={70}
@@ -331,10 +332,10 @@ export const AdaptiveStudio = ({ ratios }: AdaptiveStudioProps) => {
           onPointerDown={(event) => beginResize(1, event)}
           onKeyDown={(event) => resizeWithKeyboard(1, event)}
         ><span aria-hidden="true" /></div>
-        <section className="studio-pane studio-pane--preview" aria-label="Live preview pane">
+        <section className="studio-pane studio-pane--preview" aria-label={t(settings.language, 'livePreviewPane')}>
           <div className="studio-pane__heading">
-            <span>Live Preview</span>
-            <span className="status-dot">Isolated</span>
+            <span>{t(settings.language, 'livePreview')}</span>
+            <span className="status-dot">{t(settings.language, 'isolated')}</span>
           </div>
           <PreviewHost component={component} onPreviewPolicyChange={persistPreviewPolicy} />
         </section>
@@ -347,12 +348,12 @@ export const AdaptiveStudio = ({ ratios }: AdaptiveStudioProps) => {
             className="studio-drawer"
             role="dialog"
             aria-modal="true"
-            aria-label="Component list"
+            aria-label={t(settings.language, 'componentList')}
             onMouseDown={(event) => event.stopPropagation()}
             onKeyDown={handleDrawerKeyDown}
           >
             <header>
-              <strong>Components</strong>
+              <strong>{t(settings.language, 'components')}</strong>
               <button ref={drawerCloseRef} type="button" className="button button--icon" aria-label="Close component list" onClick={closeDrawer}>×</button>
             </header>
             <ComponentList

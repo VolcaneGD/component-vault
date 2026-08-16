@@ -1,5 +1,6 @@
 import type { LibraryRecord } from '../../../../shared/contracts';
 import { useAppStore } from '../../store/useAppStore';
+import { t } from '../../i18n';
 
 interface LibrarySidebarProps {
   libraries: LibraryRecord[];
@@ -20,7 +21,8 @@ export const LibrarySidebar = ({
   onExport,
   onSettings,
 }: LibrarySidebarProps) => {
-  const { components, searchQuery, selectedTags, setSearchQuery, toggleTag, clearFilters } = useAppStore();
+  const { components, searchQuery, selectedTags, setSearchQuery, toggleTag, clearFilters, settings } = useAppStore();
+  const translate = (key: Parameters<typeof t>[1]) => t(settings.language, key);
   const tags = Array.from(new Set(components.flatMap((component) => component.tags)))
     .sort((left, right) => left.localeCompare(right));
 
@@ -30,28 +32,28 @@ export const LibrarySidebar = ({
       <span className="library-sidebar__mark" aria-hidden="true">CV</span>
       <div>
         <strong>Component Vault</strong>
-        <span>Component workspace</span>
+        <span>{translate('componentWorkspace')}</span>
       </div>
     </div>
 
-    <button type="button" className="new-component-button" onClick={onNewComponent}>New component</button>
+    <button type="button" className="new-component-button" onClick={onNewComponent}>{translate('newComponent')}</button>
 
     <label className="library-sidebar__search">
-      <span className="sr-only">Search components</span>
+      <span className="sr-only">{translate('searchComponents')}</span>
       <input
         type="search"
-        placeholder="Search components"
-        aria-label="Search components"
+        placeholder={translate('searchComponents')}
+        aria-label={translate('searchComponents')}
         value={searchQuery}
         onChange={(event) => setSearchQuery(event.target.value)}
       />
     </label>
 
-    <nav aria-label="Component Vault navigation" className="library-sidebar__nav">
+    <nav aria-label={translate('navigation')} className="library-sidebar__nav">
       <section aria-labelledby="libraries-heading">
         <div className="sidebar-heading-row">
-          <h2 id="libraries-heading">Libraries</h2>
-          <button type="button" aria-label="Add library">+</button>
+          <h2 id="libraries-heading">{translate('libraries')}</h2>
+          <button type="button" aria-label={translate('addLibrary')}>+</button>
         </div>
         <button
           type="button"
@@ -59,7 +61,7 @@ export const LibrarySidebar = ({
           aria-pressed={selectedLibraryId === null}
           onClick={() => onSelectLibrary(null)}
         >
-          All components
+          {translate('allComponents')}
         </button>
         {libraries.map((library) => (
           <button
@@ -75,13 +77,13 @@ export const LibrarySidebar = ({
       </section>
 
       <section aria-labelledby="tags-heading">
-        <h2 id="tags-heading">Tags</h2>
-        <div className="tag-list" aria-label="Component tags">
+        <h2 id="tags-heading">{translate('tags')}</h2>
+        <div className="tag-list" aria-label={translate('componentTags')}>
           {tags.map((tag) => (
             <button
               key={tag}
               type="button"
-              aria-label={`Filter by tag ${tag}`}
+              aria-label={`${translate('filterByTag')} ${tag}`}
               aria-pressed={selectedTags.includes(tag)}
               onClick={() => toggleTag(tag)}
             >
@@ -89,16 +91,16 @@ export const LibrarySidebar = ({
             </button>
           ))}
           {(searchQuery || selectedTags.length > 0) && (
-            <button type="button" className="tag-list__clear" onClick={clearFilters}>Clear filters</button>
+            <button type="button" className="tag-list__clear" onClick={clearFilters}>{translate('clearFilters')}</button>
           )}
         </div>
       </section>
     </nav>
 
-    <div className="library-sidebar__footer" aria-label="Library actions">
-      <button type="button" onClick={onImport}>Import</button>
-      <button type="button" disabled={!onExport} onClick={onExport}>Export</button>
-      <button type="button" onClick={(event) => onSettings?.(event.currentTarget)}>Settings</button>
+    <div className="library-sidebar__footer" aria-label={translate('libraryActions')}>
+      <button type="button" onClick={onImport}>{translate('import')}</button>
+      <button type="button" disabled={!onExport} onClick={onExport}>{translate('export')}</button>
+      <button type="button" onClick={(event) => onSettings?.(event.currentTarget)}>{translate('settings')}</button>
     </div>
     </aside>
   );

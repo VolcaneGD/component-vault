@@ -11,6 +11,7 @@ import {
 import type { ComponentRecord, PreviewPolicy } from '../../../../shared/contracts';
 import { PreviewHost } from '../preview/PreviewHost';
 import { useAppStore } from '../../store/useAppStore';
+import { t } from '../../i18n';
 
 type GalleryColumns = 1 | 2 | 3 | 4;
 
@@ -77,6 +78,7 @@ const LazyThumbnail = ({
   component: ComponentRecord;
   onPreviewPolicyChange: (policy: PreviewPolicy) => Promise<PreviewPolicy>;
 }) => {
+  const language = useAppStore((state) => state.settings.language);
   const hostRef = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(() => typeof IntersectionObserver === 'undefined');
 
@@ -99,11 +101,11 @@ const LazyThumbnail = ({
             component={component}
             onPreviewPolicyChange={onPreviewPolicyChange}
             loading="lazy"
-            title={`Preview of ${component.name}`}
+            title={language === 'ja' ? `${t(language, 'componentPreview')}: ${component.name}` : `Preview of ${component.name}`}
             compact
           />
         )
-        : <span className="gallery-card__preview-loading">Preview queued</span>}
+        : <span className="gallery-card__preview-loading">{t(language, 'previewQueued')}</span>}
     </div>
   );
 };
@@ -131,6 +133,7 @@ const GalleryCard = ({
   onDrop: (event: DragEvent<HTMLElement>) => void;
   onPreviewPolicyChange: (policy: PreviewPolicy) => Promise<PreviewPolicy>;
 }) => {
+  const language = useAppStore((state) => state.settings.language);
   const description = descriptionSnippet(component.description, query);
 
   return (
@@ -147,15 +150,15 @@ const GalleryCard = ({
     <LazyThumbnail component={component} onPreviewPolicyChange={onPreviewPolicyChange} />
     <div className="gallery-card__body">
       <div className="gallery-card__heading">
-        <button type="button" onClick={onOpen} aria-label={`Open ${component.name}`}>
+        <button type="button" onClick={onOpen} aria-label={language === 'ja' ? `${t(language, 'open')}: ${component.name}` : `Open ${component.name}`}>
           <Highlight text={component.name} query={query} />
         </button>
         <label>
-          <span className="sr-only">Select {component.name}</span>
+          <span className="sr-only">{language === 'ja' ? `${t(language, 'select')}: ${component.name}` : `Select ${component.name}`}</span>
           <input
             type="checkbox"
             checked={checked}
-            aria-label={`Select ${component.name}`}
+            aria-label={language === 'ja' ? `${t(language, 'select')}: ${component.name}` : `Select ${component.name}`}
             onChange={onToggle}
           />
         </label>
@@ -170,12 +173,12 @@ const GalleryCard = ({
           className="gallery-card__description"
           data-contextual-match={String(description.contextual)}
           data-testid="gallery-description"
-          aria-label={`Description: ${description.text}`}
+          aria-label={`${t(language, 'description')}: ${description.text}`}
         >
           <Highlight text={description.text} query={query} />
         </p>
       )}
-      <div className="gallery-card__tags" aria-label={`${component.name} tags`}>
+      <div className="gallery-card__tags" aria-label={`${component.name}: ${t(language, 'tags')}`}>
         {component.tags.map((tag) => (
           <span key={tag}><Highlight text={tag} query={query} /></span>
         ))}
@@ -274,7 +277,7 @@ export const GalleryView = ({ columns }: GalleryViewProps) => {
       if (requestGeneration === reorderRequestGeneration.current) {
         setReorderError({
           libraryId: activeLibraryId,
-          message: 'Could not reorder components. The previous order was restored.',
+          message: t(settings.language, 'reorderFailed'),
         });
       }
     }
@@ -304,8 +307,8 @@ export const GalleryView = ({ columns }: GalleryViewProps) => {
   if (filtered.length === 0) {
     content = (
       <div className="gallery-empty" role="status">
-        <strong>No components match</strong>
-        <span>Try a different search or clear a tag filter.</span>
+        <strong>{t(settings.language, 'noComponentsMatch')}</strong>
+        <span>{t(settings.language, 'tryDifferentSearch')}</span>
       </div>
     );
   } else {
@@ -352,14 +355,14 @@ export const GalleryView = ({ columns }: GalleryViewProps) => {
     <section className="gallery-view" aria-labelledby="gallery-heading">
       <header className="gallery-toolbar">
         <div>
-          <span className="eyebrow">Gallery</span>
-          <h2 id="gallery-heading">Component collection</h2>
+          <span className="eyebrow">{t(settings.language, 'gallery')}</span>
+          <h2 id="gallery-heading">{t(settings.language, 'componentCollection')}</h2>
           <span className="gallery-toolbar__count">{filtered.length} of {components.length}</span>
         </div>
         <label className="gallery-columns">
-          <span>Columns</span>
+          <span>{t(settings.language, 'columns')}</span>
           <select
-            aria-label="Gallery columns"
+            aria-label={t(settings.language, 'galleryColumns')}
             value={galleryColumns}
             onChange={(event) => changeColumns(event.target.value)}
           >
@@ -369,10 +372,10 @@ export const GalleryView = ({ columns }: GalleryViewProps) => {
       </header>
 
       {selectedComponentIds.length > 0 && (
-        <div className="gallery-selection" aria-label="Multi-select actions">
-          <strong>{selectedComponentIds.length} selected</strong>
-          <button type="button" className="button" onClick={clearComponentSelection}>Clear selection</button>
-          <button type="button" className="button danger-action" onClick={() => void removeSelected()}>Delete selected</button>
+        <div className="gallery-selection" aria-label={t(settings.language, 'multiSelectActions')}>
+          <strong>{selectedComponentIds.length} {t(settings.language, 'selected')}</strong>
+          <button type="button" className="button" onClick={clearComponentSelection}>{t(settings.language, 'clearSelection')}</button>
+          <button type="button" className="button danger-action" onClick={() => void removeSelected()}>{t(settings.language, 'deleteSelected')}</button>
         </div>
       )}
       {reorderError?.libraryId === activeLibraryId && (

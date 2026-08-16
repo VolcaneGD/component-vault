@@ -1,4 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useAppStore } from '../../store/useAppStore';
+import { t } from '../../i18n';
 
 export interface CommandDefinition {
   id: string;
@@ -16,7 +18,7 @@ interface CommandPaletteProps {
   returnFocus?: HTMLElement | null;
 }
 
-const normalize = (value: string): string => value.toLocaleLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+const normalize = (value: string): string => value.toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 
 const isSubsequence = (needle: string, haystack: string): boolean => {
   let index = 0;
@@ -35,6 +37,7 @@ export const fuzzyCommandMatch = (command: CommandDefinition, query: string): bo
 };
 
 export const CommandPalette = ({ commands, onClose, returnFocus }: CommandPaletteProps) => {
+  const language = useAppStore((state) => state.settings.language);
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
   const [error, setError] = useState('');
@@ -61,7 +64,7 @@ export const CommandPalette = ({ commands, onClose, returnFocus }: CommandPalett
       await command.run();
       close();
     } catch {
-      setError(`Could not run ${command.label}. Your work is still available.`);
+      setError(t(language, 'commandFailed'));
     }
   };
 
@@ -74,7 +77,7 @@ export const CommandPalette = ({ commands, onClose, returnFocus }: CommandPalett
         className="command-palette"
         role="dialog"
         aria-modal="true"
-        aria-label="Command palette"
+        aria-label={t(language, 'commandPalette')}
         onKeyDown={(event) => {
           if (event.key === 'Escape') {
             event.preventDefault();
@@ -106,17 +109,17 @@ export const CommandPalette = ({ commands, onClose, returnFocus }: CommandPalett
         }}
       >
         <label className="command-palette__search">
-          <span className="sr-only">Search commands</span>
+          <span className="sr-only">{t(language, 'searchCommands')}</span>
           <input
             ref={inputRef}
             role="combobox"
-            aria-label="Search commands"
+            aria-label={t(language, 'searchCommands')}
             aria-autocomplete="list"
             aria-expanded="true"
             aria-controls={listboxId}
             aria-activedescendant={results[activeIndex] ? `${listboxId}-${results[activeIndex].id}` : undefined}
             value={query}
-            placeholder="Type a command..."
+            placeholder={t(language, 'typeCommand')}
             onChange={(event) => {
               setError('');
               setQuery(event.target.value);
@@ -124,7 +127,7 @@ export const CommandPalette = ({ commands, onClose, returnFocus }: CommandPalett
           />
           <kbd>Esc</kbd>
         </label>
-        <ul id={listboxId} role="listbox" aria-label="Available commands">
+        <ul id={listboxId} role="listbox" aria-label={t(language, 'availableCommands')}>
           {results.map((command, index) => (
             <li
               key={command.id}
@@ -140,7 +143,7 @@ export const CommandPalette = ({ commands, onClose, returnFocus }: CommandPalett
               {command.shortcut && <kbd>{command.shortcut}</kbd>}
             </li>
           ))}
-          {results.length === 0 && <li className="command-palette__empty">No matching commands</li>}
+          {results.length === 0 && <li className="command-palette__empty">{t(language, 'noMatchingCommands')}</li>}
         </ul>
         {error && <p className="command-palette__error" role="alert">{error}</p>}
       </section>

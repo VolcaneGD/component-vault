@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import notices from '../../../../../resources/THIRD_PARTY_NOTICES.md?raw';
+import { useAppStore } from '../../store/useAppStore';
+import { t } from '../../i18n';
 
 interface AboutDialogProps {
   onClose: () => void;
@@ -9,8 +11,9 @@ interface AboutDialogProps {
 const PROPERTY_HTML_SOURCE = 'https://github.com/uni928/PropertyHTML';
 
 export const AboutDialog = ({ onClose, returnFocus }: AboutDialogProps) => {
-  const [appVersion, setAppVersion] = useState('Loading...');
-  const [electronVersion, setElectronVersion] = useState('Loading...');
+  const language = useAppStore((state) => state.settings.language);
+  const [appVersion, setAppVersion] = useState('…');
+  const [electronVersion, setElectronVersion] = useState('…');
   const closeRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLElement>(null);
 
@@ -63,16 +66,16 @@ export const AboutDialog = ({ onClose, returnFocus }: AboutDialogProps) => {
       >
         <header>
           <div>
-            <span className="eyebrow">Application information</span>
-            <h2 id="about-dialog-title">About Component Vault</h2>
+            <span className="eyebrow">{t(language, 'applicationInformation')}</span>
+            <h2 id="about-dialog-title">{t(language, 'about')}</h2>
           </div>
-          <button ref={closeRef} type="button" className="button button--icon" aria-label="Close About" onClick={onClose}>x</button>
+          <button ref={closeRef} type="button" className="button button--icon" aria-label={t(language, 'closeAbout')} onClick={onClose}>×</button>
         </header>
         <div className="about-dialog__body">
           <div className="about-dialog__identity" aria-hidden="true">CV</div>
           <dl>
-            <div><dt>Component Vault</dt><dd>Version {appVersion}</dd></div>
-            <div><dt>Runtime</dt><dd>Electron {electronVersion}</dd></div>
+            <div><dt>Component Vault</dt><dd>{t(language, 'version')} {appVersion}</dd></div>
+            <div><dt>{t(language, 'runtime')}</dt><dd>Electron {electronVersion}</dd></div>
           </dl>
           <p>
             Inspired by PropertyHTML. Copyright (c) 2026 uni928.
@@ -82,10 +85,10 @@ export const AboutDialog = ({ onClose, returnFocus }: AboutDialogProps) => {
             className="button button--secondary"
             onClick={() => void window.componentVault.openExternal(PROPERTY_HTML_SOURCE)}
           >
-            Open PropertyHTML source
+            {t(language, 'openPropertyHtml')}
           </button>
           <details className="about-dialog__notices">
-            <summary>Third-Party Notices and MIT License</summary>
+            <summary>{t(language, 'thirdPartyNotices')}</summary>
             <pre>{notices}</pre>
           </details>
         </div>

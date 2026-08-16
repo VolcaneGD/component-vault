@@ -8,6 +8,8 @@ import { ExportDialog } from '../export/ExportDialog';
 import { CommandPalette, type CommandDefinition } from '../commands/CommandPalette';
 import { UndoToast } from '../feedback/UndoToast';
 import { AboutDialog } from '../about/AboutDialog';
+import { SettingsDialog } from '../settings/SettingsDialog';
+import { t } from '../../i18n';
 
 const WorkbenchPlaceholder = lazy(() => import('./WorkbenchView'));
 const GalleryPlaceholder = lazy(() => import('../library/GalleryView'));
@@ -51,6 +53,7 @@ export const AppShell = () => {
     hydrate,
     setSelectedLibraryId,
     setViewMode,
+    updateLayout,
     beginCodeComponent,
     acceptSavedComponents,
     acceptLibrary,
@@ -63,6 +66,7 @@ export const AppShell = () => {
   const [exportOpen, setExportOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [aboutReturnFocus, setAboutReturnFocus] = useState<HTMLElement | null>(null);
   const [paletteReturnFocus, setPaletteReturnFocus] = useState<HTMLElement | null>(null);
   const paletteButtonRef = useRef<HTMLButtonElement>(null);
@@ -95,23 +99,23 @@ export const AppShell = () => {
     const selected = components.find((component) => component.id === selectedComponentId)
       ?? components.find((component) => component.id === selectedComponentIds[0]);
     const focusSearch = () => window.requestAnimationFrame(() => {
-      document.querySelector<HTMLInputElement>('[aria-label="Search components"]')?.focus();
+      document.querySelector<HTMLInputElement>(`[aria-label="${t(settings.language, 'searchComponents')}"]`)?.focus();
     });
     return [
-      { id: 'new', label: 'New component', group: 'Create', keywords: ['code'], run: () => setImportMode('code') },
-      { id: 'search', label: 'Search components', group: 'Navigate', shortcut: '/', run: focusSearch },
-      { id: 'view-workbench', label: 'View Workbench', group: 'View', keywords: ['A editor preview'], run: () => setViewMode('workbench') },
-      { id: 'view-gallery', label: 'View Gallery', group: 'View', keywords: ['B cards'], run: () => setViewMode('gallery') },
-      { id: 'view-studio', label: 'View Adaptive Studio', group: 'View', keywords: ['C panes'], run: () => setViewMode('studio') },
-      { id: 'save', label: 'Save current component', group: 'Component', shortcut: 'Ctrl+S', disabled: !selected, run: () => selected ? saveComponent(toSaveInput(selected)) : undefined },
-      { id: 'import', label: 'Import HTML', group: 'File', run: () => setImportMode('files') },
-      { id: 'export', label: 'Export library', group: 'File', disabled: !exportLibrary || exportComponents.length === 0, run: () => setExportOpen(true) },
-      { id: 'about', label: 'About Component Vault', group: 'Help', run: () => {
+      { id: 'new', label: t(settings.language, 'newComponent'), group: settings.language === 'ja' ? '作成' : 'Create', keywords: ['code'], run: () => setImportMode('code') },
+      { id: 'search', label: t(settings.language, 'searchComponents'), group: settings.language === 'ja' ? '移動' : 'Navigate', shortcut: '/', run: focusSearch },
+      { id: 'view-workbench', label: `${settings.language === 'ja' ? '表示' : 'View'} ${t(settings.language, 'workbench')}`, group: settings.language === 'ja' ? '表示' : 'View', keywords: ['A editor preview'], run: () => setViewMode('workbench') },
+      { id: 'view-gallery', label: `${settings.language === 'ja' ? '表示' : 'View'} ${t(settings.language, 'gallery')}`, group: settings.language === 'ja' ? '表示' : 'View', keywords: ['B cards'], run: () => setViewMode('gallery') },
+      { id: 'view-studio', label: `${settings.language === 'ja' ? '表示' : 'View'} ${t(settings.language, 'adaptiveStudio')}`, group: settings.language === 'ja' ? '表示' : 'View', keywords: ['C panes'], run: () => setViewMode('studio') },
+      { id: 'save', label: settings.language === 'ja' ? '現在のコンポーネントを保存' : 'Save current component', group: settings.language === 'ja' ? 'コンポーネント' : 'Component', shortcut: 'Ctrl+S', disabled: !selected, run: () => selected ? saveComponent(toSaveInput(selected)) : undefined },
+      { id: 'import', label: settings.language === 'ja' ? 'HTMLをインポート' : 'Import HTML', group: settings.language === 'ja' ? 'ファイル' : 'File', run: () => setImportMode('files') },
+      { id: 'export', label: settings.language === 'ja' ? 'ライブラリをエクスポート' : 'Export library', group: settings.language === 'ja' ? 'ファイル' : 'File', disabled: !exportLibrary || exportComponents.length === 0, run: () => setExportOpen(true) },
+      { id: 'about', label: t(settings.language, 'about'), group: settings.language === 'ja' ? 'ヘルプ' : 'Help', run: () => {
         setAboutReturnFocus(paletteReturnFocus ?? paletteButtonRef.current);
         setAboutOpen(true);
       } },
     ];
-  }, [components, selectedComponentId, selectedComponentIds, setViewMode, saveComponent, exportLibrary, exportComponents.length, paletteReturnFocus]);
+  }, [components, selectedComponentId, selectedComponentIds, setViewMode, saveComponent, exportLibrary, exportComponents.length, paletteReturnFocus, settings.language]);
 
   return (
     <div className="app-shell">
@@ -124,13 +128,13 @@ export const AppShell = () => {
         onExport={exportLibrary && exportComponents.length > 0 ? () => setExportOpen(true) : undefined}
         onSettings={(origin) => {
           setAboutReturnFocus(origin);
-          setAboutOpen(true);
+          setSettingsOpen(true);
         }}
       />
       <main className="workspace" data-view={settings.viewMode}>
         <header className="workspace-header">
           <div>
-            <span className="eyebrow">Workspace</span>
+            <span className="eyebrow">{t(settings.language, 'workspace')}</span>
             <h1>Component Vault</h1>
           </div>
           <ViewSwitcher value={settings.viewMode} onChange={setViewMode} />
@@ -138,16 +142,16 @@ export const AppShell = () => {
             ref={paletteButtonRef}
             type="button"
             className="command-palette-trigger"
-            aria-label="Open command palette"
+            aria-label={t(settings.language, 'openCommandPalette')}
             onClick={(event) => {
               setPaletteReturnFocus(event.currentTarget);
               setPaletteOpen(true);
             }}
           >
-            <span>Commands</span><kbd>Ctrl K</kbd>
+            <span>{t(settings.language, 'commands')}</span><kbd>Ctrl K</kbd>
           </button>
         </header>
-        <Suspense fallback={<div className="mode-placeholder" aria-live="polite">Loading workspace…</div>}>
+        <Suspense fallback={<div className="mode-placeholder" aria-live="polite">{t(settings.language, 'loadingWorkspace')}</div>}>
           <ModeContent />
         </Suspense>
       </main>
@@ -183,7 +187,15 @@ export const AppShell = () => {
       {aboutOpen && (
         <AboutDialog returnFocus={aboutReturnFocus} onClose={() => setAboutOpen(false)} />
       )}
-      <div className="undo-toast-stack" aria-label="Recent deletions">
+      {settingsOpen && (
+        <SettingsDialog
+          language={settings.language}
+          onLanguageChange={(language) => updateLayout({ language })}
+          returnFocus={aboutReturnFocus}
+          onClose={() => setSettingsOpen(false)}
+        />
+      )}
+      <div className="undo-toast-stack" aria-label={t(settings.language, 'recentDeletions')}>
         {pendingDeletions.map((pending) => (
           <UndoToast
             key={`${pending.token.componentId}:${pending.token.deletedAt}`}

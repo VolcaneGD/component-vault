@@ -1,5 +1,4 @@
-import type { AppSettings } from './contracts';
-import { isViewMode } from './contracts';
+import { defaultAppSettings, isAppLanguage, isViewMode, type AppSettings } from './contracts';
 
 const isGalleryColumns = (value: unknown): value is AppSettings['galleryColumns'] =>
   value === 1 || value === 2 || value === 3 || value === 4;
@@ -12,6 +11,7 @@ export const isAppSettings = (value: unknown): value is AppSettings => {
 
   const settings = value as Record<string, unknown>;
   return (
+    (settings.language === undefined || isAppLanguage(settings.language)) &&
     isViewMode(settings.viewMode) &&
     isGalleryColumns(settings.galleryColumns) &&
     isRatio(settings.editorPreviewRatio) &&
@@ -21,4 +21,9 @@ export const isAppSettings = (value: unknown): value is AppSettings => {
     (typeof settings.lastLibraryId === 'string' || settings.lastLibraryId === null) &&
     (typeof settings.lastComponentId === 'string' || settings.lastComponentId === null)
   );
+};
+
+export const normalizeAppSettings = (value: unknown): AppSettings | null => {
+  if (!isAppSettings(value)) return null;
+  return { ...defaultAppSettings(), ...value };
 };

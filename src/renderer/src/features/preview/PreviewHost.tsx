@@ -5,6 +5,8 @@ import {
   type PreviewPolicy,
 } from '../../../../shared/contracts';
 import { ErrorConsole, type PreviewError } from '../feedback/ErrorConsole';
+import { useAppStore } from '../../store/useAppStore';
+import { t } from '../../i18n';
 import {
   isPreviewReadyMessage,
   MAX_PREVIEW_ERRORS,
@@ -49,18 +51,19 @@ const isCanonicalHttpsOrigin = (value: string): boolean => {
   }
 };
 
-const policyFailure = (error: unknown): PreviewError => ({
+const policyFailure = (error: unknown, language: 'ja' | 'en'): PreviewError => ({
   type: 'policy',
-  message: `Could not save preview policy: ${error instanceof Error ? error.message : String(error)}`,
+  message: `${t(language, 'previewPolicySaveFailed')}: ${error instanceof Error ? error.message : String(error)}`,
 });
 
 export const PreviewHost = ({
   component,
   onPreviewPolicyChange,
   loading = 'eager',
-  title = 'Component preview',
+  title,
   compact = false,
 }: PreviewHostProps) => {
+  const language = useAppStore((state) => state.settings.language);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const rateWindow = useRef<number[]>([]);
   const currentComponent = useRef({ id: component.id, policyKey: previewPolicyKey(component.previewPolicy) });
@@ -133,7 +136,7 @@ export const PreviewHost = ({
     } catch (error) {
       appendError({
         type: 'bootstrap',
-        message: `Could not configure preview security: ${error instanceof Error ? error.message : String(error)}`,
+        message: `${t(language, 'previewSecuritySetupFailed')}: ${error instanceof Error ? error.message : String(error)}`,
       });
     }
   }, [appendError, component, effectivePolicy, previewId]);
@@ -165,7 +168,7 @@ export const PreviewHost = ({
     if (event.previewId !== previewId) return;
     const error = normalizePreviewError({
       type: 'csp',
-      message: 'Blocked external preview resource',
+      message: t(language, 'blockedExternalPreviewResource'),
       blockedUri: event.url,
       blockedOrigin: event.origin,
       directive: 'main-process-request-policy',
@@ -197,7 +200,7 @@ export const PreviewHost = ({
     const requestContext = { ...currentComponent.current };
     try {
       const savedPolicy = await onPreviewPolicyChange(request);
-      if (!isPreviewPolicy(savedPolicy)) throw new Error('persistence returned an invalid policy');
+      if (!isPreviewPolicy(savedPolicy)) throw new Error(t(language, 'persistenceInvalidPolicy'));
       if (currentComponent.current.id !== requestContext.id
         || currentComponent.current.policyKey !== requestContext.policyKey) return;
       setAuthoritativePolicy({
@@ -208,20 +211,20 @@ export const PreviewHost = ({
       rateWindow.current = [];
       setComponentErrors({ componentId: component.id, items: [] });
     } catch (error) {
-      appendError(policyFailure(error));
+      appendError(policyFailure(error, language));
     }
-  }, [appendError, component.id, effectivePolicy, onPreviewPolicyChange]);
+  }, [appendError, component.id, effectivePolicy, language, onPreviewPolicyChange]);
 
   return (
     <section
       className={`preview-host${compact ? ' preview-host--compact' : ''}`}
-      aria-label={compact ? undefined : 'Live component preview'}
+      aria-label={compact ? undefined : t(language, 'liveComponentPreview')}
     >
       <iframe
         key={previewId}
         ref={iframeRef}
         className="preview-host__frame"
-        title={title}
+        title={title ?? t(language, 'componentPreview')}
         loading={loading}
         sandbox="allow-scripts allow-forms allow-modals"
         referrerPolicy="no-referrer"

@@ -130,6 +130,7 @@ export interface HtmlImportOptions {
 }
 
 export interface AppSettings {
+  language: AppLanguage;
   viewMode: ViewMode;
   galleryColumns: 1 | 2 | 3 | 4;
   editorPreviewRatio: number;
@@ -137,6 +138,10 @@ export interface AppSettings {
   lastLibraryId: string | null;
   lastComponentId: string | null;
 }
+
+export type AppLanguage = 'ja' | 'en';
+
+export const isAppLanguage = (value: unknown): value is AppLanguage => value === 'ja' || value === 'en';
 
 export interface WindowState {
   width: number;
@@ -176,6 +181,7 @@ export interface ComponentVaultApi {
 }
 
 export const defaultAppSettings = (): AppSettings => ({
+  language: 'en',
   viewMode: 'workbench',
   galleryColumns: 3,
   editorPreviewRatio: 0.55,

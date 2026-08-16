@@ -5,6 +5,8 @@ import type {
   PreviewPolicy,
 } from '../../../../shared/contracts';
 import { EditorTabs, type EditorLanguage } from './EditorTabs';
+import { useAppStore } from '../../store/useAppStore';
+import { t } from '../../i18n';
 
 type SaveState = 'draft' | 'saved' | 'saving' | 'failed';
 
@@ -19,13 +21,6 @@ interface ComponentEditorProps {
   draftOriginId?: string;
   onDraftRekeyed?: (componentId: string, draftOriginId: string) => void;
 }
-
-const saveLabels: Record<SaveState, string> = {
-  draft: 'Not saved',
-  saved: 'Saved',
-  saving: 'Saving',
-  failed: 'Save failed',
-};
 
 const toSaveInput = (component: ComponentRecord): ComponentSaveInput => ({
   id: component.id,
@@ -63,6 +58,10 @@ export const ComponentEditor = ({
   draftOriginId,
   onDraftRekeyed,
 }: ComponentEditorProps) => {
+  const language = useAppStore((state) => state.settings.language);
+  const saveLabels: Record<SaveState, string> = {
+    draft: t(language, 'notSaved'), saved: t(language, 'saved'), saving: t(language, 'saving'), failed: t(language, 'saveFailed'),
+  };
   const [draft, setDraft] = useState(component);
   const [tagText, setTagText] = useState(component.tags.join(', '));
   const [saveState, setSaveState] = useState<SaveState>(isNew ? 'draft' : 'saved');
@@ -221,7 +220,7 @@ export const ComponentEditor = ({
   return (
     <section
       className="component-editor"
-      aria-label="Component editor"
+      aria-label={t(language, 'componentEditor')}
       onKeyDown={(event) => {
         if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
           event.preventDefault();
@@ -232,10 +231,10 @@ export const ComponentEditor = ({
       <header className="component-editor__header">
         <div className="component-editor__title-group">
           <label>
-            <span className="sr-only">Component name</span>
+            <span className="sr-only">{t(language, 'componentName')}</span>
             <input
               className="component-editor__name"
-              aria-label="Component name"
+              aria-label={t(language, 'componentName')}
               value={draft.name}
               onChange={(event) => updateDraft((current) => ({ ...current, name: event.target.value }))}
             />
@@ -246,13 +245,13 @@ export const ComponentEditor = ({
         </div>
         <div className="component-editor__actions">
           <button type="button" className="button button--primary" onClick={() => void persistDraft(true)}>
-            Save component
+            {t(language, 'saveComponent')}
           </button>
           <div className="component-editor__action-menu">
             <button
               type="button"
               className="button button--icon"
-              aria-label="Component actions"
+              aria-label={t(language, 'componentActions')}
               aria-expanded={isActionsOpen}
               onClick={() => setIsActionsOpen((open) => !open)}
             >
@@ -260,8 +259,8 @@ export const ComponentEditor = ({
             </button>
             {isActionsOpen && (
               <div className="component-editor__menu" role="menu">
-                <button type="button" role="menuitem" onClick={() => void duplicate()}>Duplicate</button>
-                <button type="button" role="menuitem" className="danger-action" onClick={() => void remove()}>Delete</button>
+                <button type="button" role="menuitem" onClick={() => void duplicate()}>{t(language, 'duplicate')}</button>
+                <button type="button" role="menuitem" className="danger-action" onClick={() => void remove()}>{t(language, 'delete')}</button>
               </div>
             )}
           </div>
@@ -270,34 +269,34 @@ export const ComponentEditor = ({
 
       {isNew && (!draft.name.trim() || !hasPersistableCode(draft)) && (
         <div className="component-editor__validation" role="status" aria-live="polite">
-          {!draft.name.trim() && <span>Name is required.</span>}
-          {!hasPersistableCode(draft) && <span>Add HTML, CSS, or JavaScript before saving.</span>}
+          {!draft.name.trim() && <span>{t(language, 'nameRequired')}</span>}
+          {!hasPersistableCode(draft) && <span>{t(language, 'codeRequired')}</span>}
         </div>
       )}
 
       <details className="component-editor__metadata">
-        <summary>Details &amp; preview permissions</summary>
+        <summary>{t(language, 'detailsPermissions')}</summary>
         <div className="metadata-grid">
           <label className="metadata-field metadata-field--wide">
-            <span>Description</span>
+            <span>{t(language, 'description')}</span>
             <textarea
-              aria-label="Description"
+              aria-label={t(language, 'description')}
               value={draft.description}
               onChange={(event) => updateDraft((current) => ({ ...current, description: event.target.value }))}
             />
           </label>
           <label className="metadata-field">
-            <span>Category</span>
+            <span>{t(language, 'category')}</span>
             <input
-              aria-label="Category"
+              aria-label={t(language, 'category')}
               value={draft.category}
               onChange={(event) => updateDraft((current) => ({ ...current, category: event.target.value }))}
             />
           </label>
           <label className="metadata-field">
-            <span>Tags</span>
+            <span>{t(language, 'tagInput')}</span>
             <input
-              aria-label="Tags"
+              aria-label={t(language, 'tagInput')}
               value={tagText}
               placeholder="button, primary"
               onChange={(event) => {
@@ -309,16 +308,16 @@ export const ComponentEditor = ({
             />
           </label>
           <fieldset className="metadata-field metadata-field--permissions">
-            <legend>Preview permissions</legend>
-            <label><input type="checkbox" checked={draft.previewPolicy.allowScripts} onChange={(event) => updatePolicy({ allowScripts: event.target.checked })} /> Scripts</label>
-            <label><input type="checkbox" checked={draft.previewPolicy.allowForms} onChange={(event) => updatePolicy({ allowForms: event.target.checked })} /> Forms</label>
-            <label><input type="checkbox" checked={draft.previewPolicy.allowPopups} onChange={(event) => updatePolicy({ allowPopups: event.target.checked })} /> Popups</label>
-            <label><input aria-label="Allow external network" type="checkbox" checked={draft.previewPolicy.externalNetworkEnabled ?? false} onChange={(event) => updatePolicy({ externalNetworkEnabled: event.target.checked })} /> External network</label>
+            <legend>{t(language, 'previewPermissions')}</legend>
+            <label><input type="checkbox" checked={draft.previewPolicy.allowScripts} onChange={(event) => updatePolicy({ allowScripts: event.target.checked })} /> {t(language, 'scripts')}</label>
+            <label><input type="checkbox" checked={draft.previewPolicy.allowForms} onChange={(event) => updatePolicy({ allowForms: event.target.checked })} /> {t(language, 'forms')}</label>
+            <label><input type="checkbox" checked={draft.previewPolicy.allowPopups} onChange={(event) => updatePolicy({ allowPopups: event.target.checked })} /> {t(language, 'popups')}</label>
+            <label><input aria-label={t(language, 'allowExternalNetwork')} type="checkbox" checked={draft.previewPolicy.externalNetworkEnabled ?? false} onChange={(event) => updatePolicy({ externalNetworkEnabled: event.target.checked })} /> {t(language, 'externalNetwork')}</label>
           </fieldset>
           <label className="metadata-field metadata-field--wide">
-            <span>Allowed HTTPS origins</span>
+            <span>{t(language, 'allowedHttpsOrigins')}</span>
             <textarea
-              aria-label="Allowed HTTPS origins"
+              aria-label={t(language, 'allowedHttpsOrigins')}
               placeholder="https://cdn.example.com"
               value={draft.previewPolicy.allowedOrigins.join('\n')}
               disabled={!draft.previewPolicy.externalNetworkEnabled}
