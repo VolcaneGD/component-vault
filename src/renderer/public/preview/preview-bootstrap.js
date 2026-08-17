@@ -101,6 +101,17 @@
     && typeof value.javascript === 'string'
     && typeof value.allowScripts === 'boolean';
 
+  const applyCanvasTheme = (previewTheme) => {
+    const dark = previewTheme === 'dark';
+    const background = dark ? '#121826' : '#ffffff';
+    document.documentElement.style.backgroundColor = background;
+    document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
+    document.body.style.minHeight = '100vh';
+    document.body.style.margin = '0';
+    document.body.style.backgroundColor = background;
+    document.body.style.color = dark ? '#edf1ff' : '#111827';
+  };
+
   window.addEventListener('message', (event) => {
     if (event.source !== parent) return;
     if (!event.data || event.data.channel !== INIT_CHANNEL || event.data.previewId !== previewId) return;
@@ -111,6 +122,7 @@
       document.querySelectorAll('[data-component-vault-preview-asset]').forEach((element) => element.remove());
       const root = document.querySelector('#component-vault-preview-root');
       if (!root) throw new Error('Preview root is unavailable');
+      applyCanvasTheme(event.data.component.previewTheme === 'dark' ? 'dark' : 'light');
       root.innerHTML = event.data.component.html;
 
       if (event.data.component.css) {

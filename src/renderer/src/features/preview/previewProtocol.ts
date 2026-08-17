@@ -91,12 +91,17 @@ export const previewPolicyKey = (policy: PreviewPolicy): string => JSON.stringif
   allowedOrigins: policy.allowedOrigins,
 });
 
-export const previewPayload = (component: ComponentRecord, policy: PreviewPolicy) => ({
+export const previewPayload = (
+  component: ComponentRecord,
+  policy: PreviewPolicy,
+  previewTheme: 'light' | 'dark',
+) => ({
   channel: PREVIEW_INIT_CHANNEL,
   component: {
     html: component.html,
     css: component.css,
     javascript: component.javascript,
     allowScripts: policy.allowScripts,
+    previewTheme,
   },
 });

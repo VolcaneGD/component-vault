@@ -105,6 +105,35 @@ describe('PreviewHost', () => {
     expect(screen.getByTitle('Component preview')).toHaveAttribute('data-preview-theme', 'dark');
   });
 
+  it('sends a changed canvas theme into an already-ready preview document', async () => {
+    useAppStore.setState({ settings: { ...defaultAppSettings(), previewTheme: 'light' } });
+    render(<PreviewHost component={component()} />);
+    const iframe = screen.getByTitle('Component preview') as HTMLIFrameElement;
+    const postMessage = await readyPreview(iframe);
+
+    act(() => useAppStore.setState((state) => ({
+      settings: { ...state.settings, previewTheme: 'dark' },
+    })));
+
+    await waitFor(() => expect(postMessage).toHaveBeenLastCalledWith(expect.objectContaining({
+      component: expect.objectContaining({ previewTheme: 'dark' }),
+    }), '*'));
+  });
+
+  it('does not resend preview code when a non-preview component field changes', async () => {
+    useAppStore.setState({ settings: { ...defaultAppSettings(), previewTheme: 'light' } });
+    const first = component();
+    const { rerender } = render(<PreviewHost component={first} />);
+    const iframe = screen.getByTitle('Component preview') as HTMLIFrameElement;
+    const postMessage = await readyPreview(iframe);
+    postMessage.mockClear();
+
+    rerender(<PreviewHost component={{ ...first, name: 'Renamed preview component' }} />);
+
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    expect(postMessage).not.toHaveBeenCalled();
+  });
+
   it('releases only its preview instance when the frame unmounts', () => {
     const { unmount } = render(<PreviewHost component={component()} />);
     const previewId = previewIdFrom(screen.getByTitle('Component preview') as HTMLIFrameElement);

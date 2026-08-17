@@ -66,6 +66,7 @@ export const PreviewHost = ({
   const language = useAppStore((state) => state.settings.language);
   const previewTheme = useAppStore((state) => state.settings.previewTheme);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const readyPreviewId = useRef<string | null>(null);
   const rateWindow = useRef<number[]>([]);
   const currentComponent = useRef({ id: component.id, policyKey: previewPolicyKey(component.previewPolicy) });
   const [reloadRevision, setReloadRevision] = useState(0);
@@ -95,6 +96,8 @@ export const PreviewHost = ({
       reloadRevision,
     ],
   );
+  const previewIdRef = useRef(previewId);
+  previewIdRef.current = previewId;
   const frameSource = useMemo(() => {
     return `component-vault-preview://sandbox/preview.html#${previewId}`;
   }, [previewId]);
@@ -131,7 +134,7 @@ export const PreviewHost = ({
       });
       if (iframeRef.current?.contentWindow !== frameWindow || expectedId !== previewId) return;
       frameWindow.postMessage({
-        ...previewPayload(component, effectivePolicy),
+        ...previewPayload(component, effectivePolicy, previewTheme),
         previewId,
       }, '*');
     } catch (error) {
@@ -140,12 +143,17 @@ export const PreviewHost = ({
         message: `${t(language, 'previewSecuritySetupFailed')}: ${error instanceof Error ? error.message : String(error)}`,
       });
     }
-  }, [appendError, component, effectivePolicy, previewId]);
+  }, [appendError, component, effectivePolicy, previewId, previewTheme]);
+  const activatePreviewRef = useRef(activatePreview);
+  activatePreviewRef.current = activatePreview;
 
   const receivePreviewMessage = useCallback((event: MessageEvent<unknown>) => {
     if (event.source !== iframeRef.current?.contentWindow) return;
     if (isPreviewReadyMessage(event.data)) {
-      if (event.data.previewId === previewId) void activatePreview();
+      if (event.data.previewId === previewId) {
+        readyPreviewId.current = previewId;
+        void activatePreview();
+      }
       return;
     }
     if (typeof event.data !== 'object' || event.data === null) return;
@@ -156,6 +164,11 @@ export const PreviewHost = ({
 
     acceptPreviewError(error);
   }, [acceptPreviewError, activatePreview, previewId]);
+
+  useEffect(() => {
+    if (readyPreviewId.current !== previewIdRef.current) return;
+    void activatePreviewRef.current();
+  }, [previewTheme]);
 
   const messageListenerRef = useRef(receivePreviewMessage);
   messageListenerRef.current = receivePreviewMessage;
