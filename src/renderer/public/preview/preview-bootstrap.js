@@ -7,6 +7,14 @@
   const MAX_MESSAGE_LENGTH = 2_000;
   const MAX_STACK_LENGTH = 8_000;
   const MAX_RESOURCE_LENGTH = 2_048;
+  const PREVIEW_CANVAS_CSS = `
+    html { scrollbar-color: #43516f #0d1325; scrollbar-width: thin; }
+    html::-webkit-scrollbar { width: 0.72rem; height: 0.72rem; }
+    html::-webkit-scrollbar-track { background: #0d1325; }
+    html::-webkit-scrollbar-thumb { border: 2px solid #0d1325; border-radius: 999px; background: #43516f; }
+    html::-webkit-scrollbar-thumb:hover { background: #6d56de; }
+    html::-webkit-scrollbar-corner { background: #0d1325; }
+  `;
   const previewId = location.hash.slice(1);
   const objectUrls = [];
 
@@ -94,6 +102,14 @@
     return url;
   };
 
+  const appendStylesheet = (contents) => {
+    const stylesheet = document.createElement('link');
+    stylesheet.rel = 'stylesheet';
+    stylesheet.dataset.componentVaultPreviewAsset = 'true';
+    stylesheet.href = objectUrl(contents, 'text/css');
+    document.head.append(stylesheet);
+  };
+
   const isComponentPayload = (value) => value
     && typeof value === 'object'
     && typeof value.html === 'string'
@@ -108,6 +124,8 @@
     document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
     document.body.style.minHeight = '100vh';
     document.body.style.margin = '0';
+    document.body.style.setProperty('box-sizing', 'border-box', 'important');
+    document.body.style.setProperty('padding', '24px', 'important');
     document.body.style.backgroundColor = background;
     document.body.style.color = dark ? '#edf1ff' : '#111827';
   };
@@ -126,12 +144,9 @@
       root.innerHTML = event.data.component.html;
 
       if (event.data.component.css) {
-        const stylesheet = document.createElement('link');
-        stylesheet.rel = 'stylesheet';
-        stylesheet.dataset.componentVaultPreviewAsset = 'true';
-        stylesheet.href = objectUrl(event.data.component.css, 'text/css');
-        document.head.append(stylesheet);
+        appendStylesheet(event.data.component.css);
       }
+      appendStylesheet(PREVIEW_CANVAS_CSS);
 
       if (event.data.component.allowScripts && event.data.component.javascript) {
         const script = document.createElement('script');

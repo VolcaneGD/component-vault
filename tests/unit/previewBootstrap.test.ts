@@ -67,6 +67,17 @@ describe('static preview bootstrap', () => {
 
     expect(dom.window.document.querySelector('#demo')).toHaveAttribute('data-ready', 'true');
     expect(dom.window.document.querySelector('link[rel="stylesheet"]')).not.toBeNull();
+    expect(dom.window.document.body.style.padding).toBe('24px');
+    expect(dom.window.document.body.style.getPropertyPriority('padding')).toBe('important');
+    expect(dom.window.document.body.style.boxSizing).toBe('border-box');
+    const stylesheets = dom.window.document.querySelectorAll('link[rel="stylesheet"]') as unknown as ArrayLike<{
+      getAttribute(name: string): string | null;
+    }>;
+    const canvasStylesheet = Array.from(stylesheets)
+      .map((link) => Buffer.from((link.getAttribute('href') ?? '').split(',').at(-1) ?? '', 'base64').toString('utf8'))
+      .find((contents) => contents.includes('scrollbar-color'));
+    expect(canvasStylesheet).toContain('::-webkit-scrollbar-thumb');
+    expect(canvasStylesheet).toContain('#43516f');
     dom.window.close();
   });
 

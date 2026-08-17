@@ -81,7 +81,7 @@ export const LibrarySidebar = ({
   return (
     <aside className="library-sidebar">
     <div className="library-sidebar__brand">
-      <span className="library-sidebar__mark" aria-hidden="true">CV</span>
+      <img className="library-sidebar__mark" src="/component-vault-icon.png" alt="Component Vault" />
       <div>
         <strong>Component Vault</strong>
         <span>{translate('componentWorkspace')}</span>

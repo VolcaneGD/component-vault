@@ -110,6 +110,18 @@ afterEach(() => {
 });
 
 describe('GalleryView', () => {
+  it('uses the packaged application icon for the sidebar brand mark', () => {
+    render(
+      <LibrarySidebar
+        libraries={[library]}
+        selectedLibraryId={library.id}
+        onSelectLibrary={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByAltText('Component Vault')).toHaveAttribute('src', '/component-vault-icon.png');
+  });
+
   it('uses the persisted dark preview canvas for gallery thumbnails', () => {
     useAppStore.setState({ settings: { ...useAppStore.getState().settings, previewTheme: 'dark' } });
 
