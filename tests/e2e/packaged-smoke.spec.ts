@@ -37,6 +37,17 @@ packagedTest('the packaged app restores a saved component and normal window boun
 
   try {
     const firstRun = await launch();
+    const brandMark = firstRun.page.getByAltText('Component Vault');
+    await expect(brandMark).toBeVisible();
+    await expect.poll(() => brandMark.evaluate((image: HTMLImageElement) => ({
+      loaded: image.naturalWidth > 0 && image.naturalHeight > 0,
+      width: getComputedStyle(image).width,
+      height: getComputedStyle(image).height,
+    }))).toEqual({
+      loaded: true,
+      width: '32px',
+      height: '32px',
+    });
     const savedBounds = await firstRun.app.evaluate(({ BrowserWindow, screen }) => {
       const window = BrowserWindow.getAllWindows()[0];
       const workArea = screen.getPrimaryDisplay().workArea;
@@ -60,7 +71,13 @@ packagedTest('the packaged app restores a saved component and normal window boun
     await firstRun.page.getByLabel('Component name').fill('Packaged persistence button');
     const editor = firstRun.page.locator('.monaco-editor .native-edit-context');
     await editor.focus();
-    await firstRun.page.keyboard.insertText('<button type="button">Persisted</button>');
+    await firstRun.page.keyboard.insertText(Array.from(
+      { length: 48 },
+      (_, index) => `<button type="button">Persisted ${index}</button>`,
+    ).join('\n'));
+    const editorScrollbar = firstRun.page.locator('.monaco-editor .scrollbar.vertical .slider');
+    await expect(editorScrollbar).toBeVisible();
+    await expect(editorScrollbar).toHaveCSS('background-color', 'rgb(175, 165, 255)');
     await firstRun.page.getByRole('button', { name: 'Save' }).click();
     await expect.poll(() => firstRun.page.evaluate(async () => {
       const library = (await window.componentVault.listLibraries())

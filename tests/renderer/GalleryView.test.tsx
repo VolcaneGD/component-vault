@@ -119,7 +119,7 @@ describe('GalleryView', () => {
       />,
     );
 
-    expect(screen.getByAltText('Component Vault')).toHaveAttribute('src', '/component-vault-icon.png');
+    expect(screen.getByAltText('Component Vault')).toHaveAttribute('src', './component-vault-icon.png');
   });
 
   it('uses the persisted dark preview canvas for gallery thumbnails', () => {

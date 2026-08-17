@@ -46,6 +46,9 @@ const componentVaultTheme: Parameters<BeforeMount>[0]['editor']['defineTheme'] e
     'editor.selectionBackground': '#51449A99',
     'editor.inactiveSelectionBackground': '#3A356080',
     'editorCursor.foreground': '#B8ADFF',
+    'scrollbarSlider.background': '#AFA5FF',
+    'scrollbarSlider.hoverBackground': '#CFC9FF',
+    'scrollbarSlider.activeBackground': '#FFFFFF',
   },
 };
 
