@@ -1,5 +1,14 @@
 export type ViewMode = 'workbench' | 'gallery' | 'studio';
 export type PreviewTheme = 'light' | 'dark';
+export type UpdateState = 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'not-available' | 'error' | 'unsupported';
+
+export interface UpdateSnapshot {
+  state: UpdateState;
+  currentVersion: string;
+  availableVersion?: string;
+  percent?: number;
+  message?: string;
+}
 
 export interface ComponentRecord {
   id: string;
@@ -165,6 +174,11 @@ export interface WindowState {
 export interface ComponentVaultApi {
   getAppVersion: () => Promise<string>;
   getElectronVersion: () => Promise<string>;
+  getUpdateStatus: () => Promise<UpdateSnapshot>;
+  checkForUpdates: () => Promise<UpdateSnapshot>;
+  downloadUpdate: () => Promise<UpdateSnapshot>;
+  installUpdate: () => Promise<void>;
+  onUpdateStatus: (listener: (snapshot: UpdateSnapshot) => void) => () => void;
   getRecoverySnapshot: () => Promise<RecoverySnapshot | null>;
   ackRecoverySnapshot: (snapshot: RecoverySnapshot) => Promise<boolean>;
   openExternal: (url: string) => Promise<void>;

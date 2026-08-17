@@ -10,6 +10,7 @@ import {
   type PreviewNetworkPolicyRequest,
   type RecoverySnapshot,
   type SoftDeleteToken,
+  type UpdateSnapshot,
 } from '../../shared/contracts';
 import { isAppSettings } from '../../shared/validation';
 import { importHtmlFiles } from '../services/importHtml';
@@ -21,6 +22,7 @@ import {
 import type { LibraryService } from '../services/library';
 import type { SettingsService } from '../services/settings';
 import type { PreviewSecurityController } from '../security/previewSecurity';
+import type { UpdateService } from '../update/updateService';
 import { IPC_CHANNELS } from '../../shared/ipcChannels';
 
 export { IPC_CHANNELS } from '../../shared/ipcChannels';
@@ -45,6 +47,7 @@ interface RegisterIpcDependencies {
       filters: Array<{ name: string; extensions: string[] }>;
     }) => Promise<{ canceled: boolean; filePath?: string }>;
   };
+  updates?: UpdateService;
 }
 
 export const registerIpcHandlers = ({
@@ -57,9 +60,26 @@ export const registerIpcHandlers = ({
   clipboard,
   externalLinks,
   dialogs,
+  updates,
 }: RegisterIpcDependencies): void => {
   ipcMain.handle(IPC_CHANNELS.appGetVersion, () => appVersion());
   ipcMain.handle(IPC_CHANNELS.appGetElectronVersion, () => electronVersion());
+  ipcMain.handle(IPC_CHANNELS.appUpdateStatus, event => {
+    assertMainFrame(event, 'Update status');
+    return updates?.getSnapshot() ?? unsupportedUpdate(appVersion());
+  });
+  ipcMain.handle(IPC_CHANNELS.appUpdateCheck, event => {
+    assertMainFrame(event, 'Update check');
+    return updates?.check() ?? unsupportedUpdate(appVersion());
+  });
+  ipcMain.handle(IPC_CHANNELS.appUpdateDownload, event => {
+    assertMainFrame(event, 'Update download');
+    return updates?.download() ?? unsupportedUpdate(appVersion());
+  });
+  ipcMain.handle(IPC_CHANNELS.appUpdateInstall, event => {
+    assertMainFrame(event, 'Update installation');
+    updates?.install();
+  });
   ipcMain.handle(IPC_CHANNELS.appGetRecoverySnapshot, () => libraries.getRecoverySnapshot());
   ipcMain.handle(IPC_CHANNELS.appAckRecoverySnapshot, async (event, snapshot) => {
     assertMainFrame(event, 'Recovery acknowledgement');
@@ -300,3 +320,5 @@ const validateString = (value: unknown, name: string, maximum: number, allowEmpt
 
 const isStringWithin = (value: unknown, maximum: number): value is string =>
   typeof value === 'string' && value.length <= maximum;
+
+const unsupportedUpdate = (currentVersion: string): UpdateSnapshot => ({ state: 'unsupported', currentVersion });

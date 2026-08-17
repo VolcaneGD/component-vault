@@ -39,7 +39,12 @@ win:
     - target: zip
       arch:
         - x64
-artifactName: '${productName}-${version}-${arch}.${ext}'
+artifactName: 'Component.Vault-${version}-${arch}.${ext}'
+publish:
+  provider: github
+  owner: VolcaneGD
+  repo: component-vault
+  releaseType: release
 nsis:
   oneClick: false
   perMachine: false

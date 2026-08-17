@@ -10,6 +10,15 @@ import { IPC_CHANNELS } from '../shared/ipcChannels';
 const componentVaultApi: ComponentVaultApi = {
   getAppVersion: () => ipcRenderer.invoke(IPC_CHANNELS.appGetVersion),
   getElectronVersion: () => ipcRenderer.invoke(IPC_CHANNELS.appGetElectronVersion),
+  getUpdateStatus: () => ipcRenderer.invoke(IPC_CHANNELS.appUpdateStatus),
+  checkForUpdates: () => ipcRenderer.invoke(IPC_CHANNELS.appUpdateCheck),
+  downloadUpdate: () => ipcRenderer.invoke(IPC_CHANNELS.appUpdateDownload),
+  installUpdate: () => ipcRenderer.invoke(IPC_CHANNELS.appUpdateInstall),
+  onUpdateStatus: listener => {
+    const receiveUpdateStatus = (_event: Electron.IpcRendererEvent, snapshot: import('../shared/contracts').UpdateSnapshot) => listener(snapshot);
+    ipcRenderer.on(IPC_CHANNELS.appUpdateStatusChanged, receiveUpdateStatus);
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.appUpdateStatusChanged, receiveUpdateStatus);
+  },
   getRecoverySnapshot: () => ipcRenderer.invoke(IPC_CHANNELS.appGetRecoverySnapshot),
   ackRecoverySnapshot: snapshot => ipcRenderer.invoke(IPC_CHANNELS.appAckRecoverySnapshot, snapshot),
   openExternal: url => ipcRenderer.invoke(IPC_CHANNELS.appOpenExternal, url),

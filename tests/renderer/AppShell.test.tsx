@@ -604,7 +604,7 @@ describe('App shell navigation', () => {
       createdAt: library.createdAt, updatedAt: library.updatedAt, deletedAt: null,
     };
     const deleteComponent = vi.fn().mockResolvedValue({
-      componentId: component.id, deletedAt: component.updatedAt, expiresAt: '2026-08-17T00:00:08.000Z',
+      componentId: component.id, deletedAt: component.updatedAt, expiresAt: new Date(Date.now() + 8_000).toISOString(),
     });
     Object.defineProperty(window, 'componentVault', {
       configurable: true,
@@ -623,7 +623,7 @@ describe('App shell navigation', () => {
     await user.click(await screen.findByRole('menuitem', { name: 'Delete component' }));
 
     await waitFor(() => expect(deleteComponent).toHaveBeenCalledWith(component.id));
-    expect(screen.getByText('Component deleted')).toBeVisible();
+    await waitFor(() => expect(screen.getByText('Component deleted')).toBeVisible());
   });
 
   it('requires confirmation before deleting a library from its context menu', async () => {

@@ -44,8 +44,8 @@ npm run package:dir
 
 Artifacts are written to `release/`:
 
-- `Component Vault-<version>-x64.exe` - assisted, per-user NSIS installer
-- `Component Vault-<version>-x64.zip` - portable application archive
+- `Component.Vault-<version>-x64.exe` - assisted, per-user NSIS installer
+- `Component.Vault-<version>-x64.zip` - portable application archive
 - `win-unpacked/ComponentVault.exe` - unpacked executable produced by `package:dir` or as package staging
 
 The build packages only compiled `out/` code and production dependencies. Database migration routines are compiled into `out/main/index.js`; source maps, tests, source files, development databases, backups, `.serena`, and `.superpowers` are excluded. `THIRD_PARTY_NOTICES.md` is placed beside the packaged application resources.
@@ -59,6 +59,12 @@ Remove-Item Env:COMPONENT_VAULT_EXECUTABLE
 ```
 
 No packaging command publishes or uploads artifacts.
+
+## In-app updates
+
+The NSIS-installed app checks GitHub Releases only when you choose **Settings → App updates → Check for updates**. If a newer signed release is available, choose **Download update**, then **Restart and install**. Downloads are never automatic.
+
+The portable ZIP intentionally remains manual-update-only. Download the current ZIP or NSIS installer from the release page when you want to update a portable copy.
 
 ## Data and backups
 

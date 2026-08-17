@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import type { AppLanguage } from '../../../../shared/contracts';
 import { t } from '../../i18n';
+import { UpdatePanel } from './UpdatePanel';
 
 interface SettingsDialogProps {
   language: AppLanguage;
@@ -47,6 +48,7 @@ export const SettingsDialog = ({ language, onLanguageChange, onClose, returnFocu
             <label><input type="radio" name="app-language" checked={language === 'ja'} onChange={() => onLanguageChange('ja')} /> {t(language, 'japanese')}</label>
             <label><input type="radio" name="app-language" checked={language === 'en'} onChange={() => onLanguageChange('en')} /> {t(language, 'english')}</label>
           </fieldset>
+          <UpdatePanel language={language} />
         </div>
       </section>
     </div>

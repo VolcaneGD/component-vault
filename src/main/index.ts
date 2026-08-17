@@ -1,4 +1,5 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, protocol, screen, shell } from 'electron';
+import electronUpdater from 'electron-updater';
 import { join } from 'node:path';
 import { openDatabase, type DatabaseContext } from './database/database';
 import { registerIpcHandlers } from './ipc/registerIpc';
@@ -11,6 +12,7 @@ import { OperationLock } from './cli/operationLock';
 import { executeCommand } from '../shared/cliProtocol';
 import type { LibraryChangedEvent } from '../shared/contracts';
 import { runCli } from './cli/entrypoint';
+import { createUpdateService, type UpdateService } from './update/updateService';
 import { createPreviewSecurityController } from './security/previewSecurity';
 import { installPreviewProtocol, registerPreviewScheme } from './security/previewProtocol';
 import {
@@ -31,7 +33,9 @@ let libraryService: LibraryService | null = null;
 let deletionCleanupTimer: NodeJS.Timeout | null = null;
 let operationLock: OperationLock | null = null;
 let cliBroker: CliBroker | null = null;
+let updateService: UpdateService | null = null;
 let shutdownInProgress = false;
+const { autoUpdater } = electronUpdater;
 const previewSecurity = createPreviewSecurityController();
 registerPreviewScheme(protocol);
 const cliMode = process.argv.includes('--cli');
@@ -77,6 +81,17 @@ if (cliMode) {
   }, 8_000);
   deletionCleanupTimer.unref();
   const settings = createSettingsService(databaseContext);
+  updateService = createUpdateService({
+    updater: autoUpdater,
+    currentVersion: app.getVersion(),
+    isPackaged: app.isPackaged,
+    isPortable: Boolean(process.env.PORTABLE_EXECUTABLE_DIR),
+  });
+  updateService.onStatus(snapshot => {
+    for (const window of BrowserWindow.getAllWindows()) {
+      window.webContents.send('app:update-status-changed', snapshot);
+    }
+  });
   registerIpcHandlers({
     ipcMain,
     appVersion: () => app.getVersion(),
@@ -87,6 +102,7 @@ if (cliMode) {
     clipboard,
     externalLinks: shell,
     dialogs: dialog,
+    updates: updateService,
   });
   const registry = commandRegistry({ libraries: libraryService, settings });
   cliBroker = await startCliBroker({

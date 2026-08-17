@@ -1035,6 +1035,23 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .about-dialog > header { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border); }
 .about-dialog h2 { margin: 0.2rem 0 0; font-size: 1.3rem; }
 .about-dialog__body { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--space-3); padding: var(--space-4); overflow-y: auto; }
+.settings-language,
+.settings-update {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+.settings-language legend { padding: 0 0.3rem; font-weight: 800; }
+.settings-language label { display: flex; align-items: center; gap: 0.45rem; color: var(--muted); }
+.settings-update h3,
+.settings-update p { margin: 0; }
+.settings-update > .button { justify-self: start; }
+.settings-update progress { width: min(22rem, 100%); accent-color: var(--accent-strong); }
 .about-dialog__identity { display: grid; width: 4.5rem; height: 4.5rem; place-items: center; border: 1px solid #9c8eff; border-radius: 1rem; color: #e3deff; background: #2c2754; font-size: 1.25rem; font-weight: 900; }
 .about-dialog dl { display: grid; gap: 0.45rem; margin: 0; }
 .about-dialog dl div { display: flex; justify-content: space-between; gap: var(--space-3); }
