@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.8 - 2026-08-17
+
+- Add an explicit in-app update flow in Settings: check GitHub Releases, download a selected update, then restart to install it.
+- Publish Windows update metadata (`latest.yml`) and NSIS blockmaps for safe differential updates.
+- Keep automatic downloads disabled and preserve manual updates for portable builds.
+
 ## 1.0.6 - 2026-08-17
 
 - Add right-click actions for libraries and components: open, rename, duplicate, and delete.
