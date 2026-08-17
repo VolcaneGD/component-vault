@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.9 - 2026-08-17
+
+- Keep the live preview canvas background synchronized in Workbench, Gallery, and Adaptive Studio.
+- Apply light and dark preview backgrounds inside the isolated preview document, not only around its iframe.
+
 ## 1.0.8 - 2026-08-17
 
 - Add an explicit in-app update flow in Settings: check GitHub Releases, download a selected update, then restart to install it.
